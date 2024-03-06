@@ -47,6 +47,7 @@ Bhargava2004MuscleMetabolicsProbe::Bhargava2004MuscleMetabolicsProbe() : Probe()
 {
     setNull();
     constructProperties();
+
 }
 
 //_____________________________________________________________________________
