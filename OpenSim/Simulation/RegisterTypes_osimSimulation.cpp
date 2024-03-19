@@ -287,7 +287,8 @@ OSIMSIMULATION_API void RegisterTypes_osimSimulation()
     Object::registerType( Bhargava2004SmoothedMuscleMetabolics_MuscleParameters() );
     Object::registerType( OrientationWeight() );
 	Object::registerType( ZeroMomentPointGroundReactions() );
-	Object::registerType( ZeroMomentPointGroundReactions_ZMPBodyList() );
+	Object::registerType( ZeroMomentPointContactBody() );
+    Object::registerType(ZeroMomentPointContactBodyPoint() );
 
     Object::registerType( IMUPlacer() );
     Object::registerType( IMU() );
