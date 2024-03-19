@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- *
- *         OpenSim:  exampleZeroMomentPointGroundReactions.cpp                *
+ *         OpenSim:  exampleZeroMomentPoint2_groundReactions.cpp              *
  * -------------------------------------------------------------------------- *
  * The OpenSim API is a toolkit for musculoskeletal modeling and simulation.  *
  * See http://opensim.stanford.edu and the NOTICE file for more information.  *
@@ -28,12 +28,17 @@
 #include "OpenSim/Common/IO.h"
 #include "OpenSim/OpenSim.h"
 
+// TODO: transfer components of this to the various desired examples
+// NOTE: parts of this now out of date with updated class names
+
 int main() {
 	
     using namespace OpenSim;
 
     // TODO:
     //      > Figure out use of relative paths...
+	//			>> Runs out of C:build\opensim-core\OpenSim\Examples\ZeroMomentPointGroundReactions
+	//				>>> Therefore need to ensure that any necessary files get copied across through here via CMake
 
 	//=============================================================================
     //  Read in and extract relevant data
@@ -108,7 +113,7 @@ int main() {
             osimModel.updMarkerSet().get("RMT5_ground").get_location());
 
     //=============================================================================
-    //  Create the right side contact body for the component
+    //  Create the left side contact body for the component
     //=============================================================================
 
 	// Add the left calcaneus as a contact body
@@ -149,6 +154,9 @@ int main() {
 
     // Finalize model connections
     osimModel.finalizeConnections();
+
+    // Print model to file
+    osimModel.print("C:\\opensim-zmp\\OpenSim\\Examples\\ZeroMomentPointGroundReactions\\testModel.osim");
 
     // Initialize the model's underlying computational system and get its
     // default state.

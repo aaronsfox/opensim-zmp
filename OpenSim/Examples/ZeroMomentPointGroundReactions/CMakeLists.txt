@@ -1,4 +1,5 @@
-set(EXAMPLES_TO_COMPILE exampleZeroMomentPointGroundReactions.cpp
+set(EXAMPLES_TO_COMPILE exampleZeroMomentPoint1_createAndConnectComponents.cpp
+                        exampleZeroMomentPoint2_groundReactions.cpp
 )
 
 foreach(EXAMPLE_PROG ${EXAMPLES_TO_COMPILE})
