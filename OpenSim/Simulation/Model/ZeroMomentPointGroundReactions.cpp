@@ -28,36 +28,22 @@
 
 using namespace OpenSim;
 
-//=============================================================================
-//  ZeroMomentPointGroundReactions_ZMPBodyList
-//=============================================================================
 
-ZeroMomentPointGroundReactions_ZMPBodyList::
-        ZeroMomentPointGroundReactions_ZMPBodyList() {
-    constructProperties();
-
-}
-
-void ZeroMomentPointGroundReactions_ZMPBodyList::
-        constructProperties() {
-
-    constructProperty_body_name("NONE");
-    constructProperty_zmp_checkpoints();
-    
-}
-
-void ZeroMomentPointGroundReactions_ZMPBodyList::addCheckpoint(
-    const SimTK::Vec3& zmp_checkpoint) {
-    
-    // Append provided value to list of checkpoints
-    append_zmp_checkpoints(zmp_checkpoint);
-
-}
+/* -------------------------------------------------------------------------- *
+ * ZeroMomentPointGroundReactions                                             *
+ * -------------------------------------------------------------------------- *
+ * Add instructional content related to the ZeroMomentPointGroundReactions    *
+ * class...                                                                   *
+ *                                                                            *
+ *                                                                            *
+ *                                                                            *
+ * -------------------------------------------------------------------------- */
 
 //=============================================================================
-//  ZeroMomentPointGroundReactions
+//  METHODS: ZeroMomentPointGroundReactions
 //=============================================================================
 
+// Default constructor
 ZeroMomentPointGroundReactions::ZeroMomentPointGroundReactions() {
     constructProperties();
 
@@ -67,18 +53,18 @@ ZeroMomentPointGroundReactions::ZeroMomentPointGroundReactions() {
 
 // Get number of contact bodies
 int ZeroMomentPointGroundReactions::getNumContactBodiesZMP() const {
-    return getProperty_zmp_body_list().size();
+    return getProperty_zmp_contact_bodies().size();
 }
-
 
 // Add a contact body specified with a name label and the contact body name
 void ZeroMomentPointGroundReactions::addContactBodyZMP(
     const std::string& name, const std::string& body_name) {
 
-    append_zmp_body_list(ZeroMomentPointGroundReactions_ZMPBodyList());
+    append_zmp_contact_bodies(ZeroMomentPointContactBody());
 
     // Get updated parameters for contact body
-    auto& cb = upd_zmp_body_list(getProperty_zmp_body_list().size() - 1);
+    auto& cb =
+            upd_zmp_contact_bodies(getProperty_zmp_contact_bodies().size() - 1);
     
     // Set the name as specified
     cb.setName(name);
@@ -98,8 +84,7 @@ void ZeroMomentPointGroundReactions::setFreeJointName(
 
 };
 
-
-//Set the distance threshold for a checkpoint to be considered
+// Set the distance threshold for a checkpoint to be considered
 // in contact with the ground plane.
 void ZeroMomentPointGroundReactions::setDistanceThreshold(
         const double& distance_threshold) {
@@ -116,13 +101,10 @@ void ZeroMomentPointGroundReactions::setForceThreshold(
     set_force_threshold(force_threshold);
 }
 
-//=============================================================================
-//  Constructing and finalizing component
-//=============================================================================
-
+// Constructor properties
 void ZeroMomentPointGroundReactions::constructProperties() {
     
-    constructProperty_zmp_body_list();
+    constructProperty_zmp_contact_bodies();
 
     // Free joint that connects the model to the ground
     constructProperty_free_joint_name("ground_pelvis");
@@ -135,14 +117,13 @@ void ZeroMomentPointGroundReactions::constructProperties() {
 
 }
 
+// TODO: needed?
 void ZeroMomentPointGroundReactions::extendFinalizeFromProperties() {
-    
-    // TODO: anything needed here?
 
 }
 
 //=============================================================================
-//  Main calculations
+//  FUNCTIONS: ZeroMomentPointGroundReactions
 //=============================================================================
 
 // Calculating ground reactions when only the state is provided
@@ -155,7 +136,7 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
     The output is returned as a Vector which size is based on the number of
     contact bodies and the separate force, moment and point components, i.e.:
        
-    FXn, FYn, FZn, MXn, MYn, MZn, PXn, PYn, PZn
+    FXn, FYn, FZn, MXn, MYn, MZn, PXn, PYn, PZn --- todo: this order needs to change!
     
     where n is repeated for the number of contact bodies specified.*/
 
@@ -171,7 +152,7 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
     const Joint& freeJoint = model.getJointSet().get(freeJointName);
 
     // Get the number of contact bodies
-    const int nCB = getProperty_zmp_body_list().size();
+    const int nCB = getProperty_zmp_contact_bodies().size();
 
     // Get the desired force threshold property
     const double forceThreshold = get_force_threshold();
@@ -312,7 +293,7 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
     const Joint& freeJoint = model.getJointSet().get(freeJointName);
 
     // Get the number of contact bodies
-    const int nCB = getProperty_zmp_body_list().size();
+    const int nCB = getProperty_zmp_contact_bodies().size();
 
     // Get the desired force threshold property
     const double forceThreshold = get_force_threshold();
@@ -366,7 +347,10 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
         // is robust to any frame translation in the model. Similarly,
         // using the frames origin (i.e. 0,0,0) as the station seems to
         // also be appropriate for simply getting the translational values.
-        SimTK::Vec3 rp = freeJoint.getChildFrame().findStationLocationInGround(
+        
+		///* TODO: Would body centre of mass be the better station to get? */
+		
+		SimTK::Vec3 rp = freeJoint.getChildFrame().findStationLocationInGround(
                 s, SimTK::Vec3(0, 0, 0));
 
         // Take the cross product of free body position and force vector to get
@@ -409,7 +393,7 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
             // Get the first body and calculate distance to COP
 
             // Get the body position
-            std::string body1_name = get_zmp_body_list(0).get_body_name();
+            std::string body1_name = get_zmp_contact_bodies(0).get_body_name();
             SimTK::Vec3 body1Pos = model.getBodySet().get(body1_name).findStationLocationInGround(s, SimTK::Vec3(0, 0, 0));
 
             //// Calculate distances from body to predicted ZMP
@@ -422,7 +406,7 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
             // Get the second body and calculate distance to COP
 
             // Get the body position
-            std::string body2_name = get_zmp_body_list(1).get_body_name();
+            std::string body2_name = get_zmp_contact_bodies(1).get_body_name();
             SimTK::Vec3 body2Pos = model.getBodySet().get(body2_name).findStationLocationInGround(s, SimTK::Vec3(0, 0, 0));
 
             //// Calculate distances from body to predicted ZMP
@@ -473,5 +457,79 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
     }
 
     return groundReactionsVec;
+
+}
+
+/* -------------------------------------------------------------------------- *
+ * ZeroMomentPointContactBody                                                 *
+ * -------------------------------------------------------------------------- *
+ * Add instructional content related to the ZeroMomentPointContactBody        *
+ * class...                                                                   *
+ *                                                                            *
+ *                                                                            *
+ *                                                                            *
+ * -------------------------------------------------------------------------- */
+
+//=============================================================================
+//  METHODS: ZeroMomentPointContactBody
+//=============================================================================
+
+ZeroMomentPointContactBody::ZeroMomentPointContactBody() {
+    constructProperties();
+}
+
+void ZeroMomentPointContactBody::constructProperties() {
+
+    constructProperty_body_name("NONE");
+    constructProperty_zmp_contact_body_points();
+
+}
+
+void ZeroMomentPointContactBody::addContactBodyPoint(
+    const std::string& point_name,
+    const std::string& body_name,
+    const SimTK::Vec3& point_location) {
+
+    // Append provided value to list of contact body points
+    append_zmp_contact_body_points(ZeroMomentPointContactBodyPoint());
+
+    // Get updated parameters for the contact body point
+    auto& cbp = upd_zmp_contact_body_points(
+            getProperty_zmp_contact_body_points().size() - 1);
+
+    // Set the name as specified
+    cbp.setName(point_name);
+
+    // Set the body name
+    cbp.set_body_name(body_name);
+
+    // Set the point location
+    cbp.set_location(point_location);
+
+}
+
+
+/* -------------------------------------------------------------------------- *
+ * ZeroMomentPointContactBodyPoint                                            *
+ * -------------------------------------------------------------------------- *
+ * Add instructional content related to the ZeroMomentPointContactBodyPoint   *
+ * class...                                                                   *
+ *                                                                            *
+ *                                                                            *
+ *                                                                            *
+ * -------------------------------------------------------------------------- */
+
+//=============================================================================
+//  METHODS: ZeroMomentPointContactBody
+//=============================================================================
+
+ZeroMomentPointContactBodyPoint::ZeroMomentPointContactBodyPoint() {
+    constructProperties();
+}
+
+void ZeroMomentPointContactBodyPoint::constructProperties() {
+
+    constructProperty_body_name("NONE");
+    constructProperty_location(SimTK::Vec3(0,0,0));
 
 }

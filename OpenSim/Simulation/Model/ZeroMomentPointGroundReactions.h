@@ -1,5 +1,6 @@
 #ifndef OPENSIM_ZEROMOMENTPOINTGROUNDREACTIONS_H
 #define OPENSIM_ZEROMOMENTPOINTGROUNDREACTIONS_H
+
 /* -------------------------------------------------------------------------- *
  * OpenSim: ZeroMomentPointGroundReactions.h                                  *
  * -------------------------------------------------------------------------- *
@@ -20,6 +21,7 @@
 
 // TODO: what to include?
 
+
 #include <OpenSim/Moco/osimMocoDLL.h>
 #include <unordered_map>
 
@@ -28,56 +30,126 @@
 
 namespace OpenSim {
 
+/* -------------------------------------------------------------------------- *
+ * Add instructional content related to the ZeroMomentPointContactBodyPoint   *
+ * class...                                                                   *
+ *                                                                            *
+ *                                                                            *
+ *                                                                            *
+ * -------------------------------------------------------------------------- */
+
 /** Object class that holds the parameters required to calculate zero moment
 point estimates of ground reactions and centre of pressure. */
-class OSIMSIMULATION_API ZeroMomentPointGroundReactions_ZMPBodyList 
-        : public Object {
-    OpenSim_DECLARE_CONCRETE_OBJECT(
-            ZeroMomentPointGroundReactions_ZMPBodyList, Object);
+class OSIMSIMULATION_API ZeroMomentPointContactBodyPoint : public Object {
+    OpenSim_DECLARE_CONCRETE_OBJECT(ZeroMomentPointContactBodyPoint, Object);
 
 public:
-
     //=========================================================================
-    // PROPERTIES (for individual contact bodies)
+    // PROPERTIES: ZeroMomentPointContactBodyPoint
     //=========================================================================
 
     OpenSim_DECLARE_PROPERTY(body_name, std::string,
-            "The name of the contact body to which the ZeroMomentPointGroundReactions "
-            " is connected to. Each body is checked for gound contact when calculating "
-            "ZMP ground reactions.");
-    
-    // NOTE: these could be better structured by sitting stations within an object that
-    // sits within the ZMP body list object
+            "The name of the body that the location point is expressed in. "
+            "Note that this can be different to the contact body that the "
+            "contact point is linked to.");
 
-    OpenSim_DECLARE_LIST_PROPERTY(zmp_checkpoints, SimTK::Vec3,
-        "The series of points associated with the contact body which will "
-        "be queried to determine whether the points are in contact with the "
-        "ground.");
+    OpenSim_DECLARE_PROPERTY(location, SimTK::Vec3,
+            "The point in the named bodies reference system corresponding to "
+            "the location on the body.");
 
-    ZeroMomentPointGroundReactions_ZMPBodyList();
+    ZeroMomentPointContactBodyPoint();
 
     //=========================================================================
-    // METHODS
+    // METHODS: ZeroMomentPointContactBodyPoint
     //=========================================================================
 
-    /*const Body& getContactBody() const { return getConnectee<Body>("body"); }*/
-
-    /** Add a ZMP checkpoint for reviewing ground contact. */
-    void addCheckpoint(const SimTK::Vec3& zmp_checkpoint);
+    // TODO: methods to get and edit points?
 
 private:
+
     void constructProperties();
 
 };
 
+
+/* -------------------------------------------------------------------------- *
+ * Add instructional content related to the ZeroMomentPointContactBody        *
+ * class...                                                                   *
+ *                                                                            *
+ *                                                                            *
+ *                                                                            *
+ * -------------------------------------------------------------------------- */
+
+/** Object class that is used to specify contact bodies within the
+ZeroMomentPointGroundReactions component. */
+class OSIMSIMULATION_API ZeroMomentPointContactBody : public Object {
+    OpenSim_DECLARE_CONCRETE_OBJECT(ZeroMomentPointContactBody, Object);
+
+public:
+    //=========================================================================
+    // PROPERTIES: ZeroMomentPointContactBody
+    //=========================================================================
+
+    OpenSim_DECLARE_PROPERTY(body_name, std::string,
+            "The name of the contact body to which the "
+            "ZeroMomentPointGroundReactions "
+            " is connected to. Each body is checked for gound contact when "
+            "calculating "
+            "ZMP ground reactions.");
+
+    // NOTE: these could be better structured by sitting stations within an
+    // object that sits within the ZMP body list object
+
+    OpenSim_DECLARE_LIST_PROPERTY(zmp_contact_body_points,
+            ZeroMomentPointContactBodyPoint,
+            "The series of points (as stations on bodies) associated with the "
+            "contact body "
+            "which will be queried to determine whether the points are in "
+            "contact with the "
+            "ground.");
+
+    ZeroMomentPointContactBody();
+
+    //=========================================================================
+    // METHODS: ZeroMomentPointContactBody
+    //=========================================================================
+
+    /*const Body& getContactBody() const { return getConnectee<Body>("body");
+     * }*/
+
+    /** Add a contact body point for reviewing ground contact. */
+    void addContactBodyPoint(const std::string& point_name,
+            const std::string& body_name, const SimTK::Vec3& point_location);
+
+private:
+
+    void constructProperties();
+
+};
+
+
+
+/* -------------------------------------------------------------------------- *
+ * Add instructional content related to the ZeroMomentPointGroundReactions    *
+ * class...                                                                   *
+ *                                                                            *
+ *                                                                            *
+ *                                                                            *
+ * -------------------------------------------------------------------------- */
+
 /** TODO: include description and info
+
+
 
 TODO: include papers...
 
-Xiang et al. 2009: https://doi.org/10.1002/nme.2575 
-Dijkstra & Gutierrez-Farewik 2015: https://doi.org/10.1016/j.jbiomech.2015.08.027
+Xiang et al. 2009: https://doi.org/10.1002/nme.2575
+Dijkstra & Gutierrez-Farewik 2015:
+https://doi.org/10.1016/j.jbiomech.2015.08.027
 */
 
+/** Model component class that is used to specify create estimates of
+* ground reaction forces and COP using the Zero Moment Point method. */
 class OSIMSIMULATION_API ZeroMomentPointGroundReactions
         : public ModelComponent {
     OpenSim_DECLARE_CONCRETE_OBJECT(
@@ -86,11 +158,11 @@ class OSIMSIMULATION_API ZeroMomentPointGroundReactions
 public:
 
     //=========================================================================
-    // PROPERTIES
+    // PROPERTIES: ZeroMomentPointGroundReactions
     //=========================================================================
 
-    OpenSim_DECLARE_LIST_PROPERTY(zmp_body_list,
-            ZeroMomentPointGroundReactions_ZMPBodyList,
+    OpenSim_DECLARE_LIST_PROPERTY(zmp_contact_bodies,
+            ZeroMomentPointContactBody,
             "Parameters for each ground contact body specified in component.");
 
     OpenSim_DECLARE_PROPERTY(free_joint_name, std::string,
@@ -98,30 +170,28 @@ public:
             "model to the ground) in the model (defaults to ground_pelvis).");
 
     OpenSim_DECLARE_OPTIONAL_PROPERTY(distance_threshold, double,
-            "The absolute distance that checkpoints associated with ZMP contact "
-            "bodies are checked against to determine whether the body is in contact "
-            "with the ground plane (i.e. distance along y-axis) (defaults to 0.01).");
+            "The absolute distance that checkpoints associated with ZMP "
+            "contact bodies are checked against to determine whether the body is in "
+            "contact with the ground plane (i.e. distance along y-axis) (defaults to "
+            "0.01).");
 
     OpenSim_DECLARE_OPTIONAL_PROPERTY(force_threshold, double,
-            "Specify the threshold for vertical force (in N) where we consider ground "
-            "contact to have occurred (i.e. vertical force above this threshold "
-            "will indicate ground contact) and when force is considered (defaults to "
-            "20N).");
+            "Specify the threshold for vertical force (in N) where we consider "
+            "ground contact to have occurred (i.e. vertical force above this "
+            "threshold will indicate ground contact) and when force is considered "
+            "(defaults to 20N).");
 
     //=========================================================================
-    // SOCKETS
+    // SOCKETS: ZeroMomentPointGroundReactions
     //=========================================================================
 
-
     //=========================================================================
-    // OUTPUTS --- TODO: do these outputs ignore multiple contact bodies?
-    // Should they be in array format to store relative to each contact body?
-    // They should probably be calculated with respect to a chosen contact body?
+    // OUTPUTS: ZeroMomentPointGroundReactions
     //=========================================================================
 
-    OpenSim_DECLARE_OUTPUT(ground_reactions, SimTK::Vector,
-            calcGroundReactions, SimTK::Stage::Dynamics);
-    
+    OpenSim_DECLARE_OUTPUT(ground_reactions, SimTK::Vector, calcGroundReactions,
+            SimTK::Stage::Dynamics);
+
     /*OpenSim_DECLARE_OUTPUT(ground_reaction_forces, SimTK::Vec3,
             getGroundReactionForces, SimTK::Stage::Dynamics);
     OpenSim_DECLARE_OUTPUT(ground_reaction_moments, SimTK::Vec3,
@@ -130,14 +200,14 @@ public:
             getGroundReactionPoints, SimTK::Stage::Dynamics);;*/
 
     //=========================================================================
-    // METHODS
+    // METHODS: ZeroMomentPointGroundReactions
     //=========================================================================
 
     ZeroMomentPointGroundReactions();
 
     // TODO: more convenience constructors for the entire component?
 
-    /** Get the number of contact bodies added to the component by one of the 
+    /** Get the number of contact bodies added to the component by one of the
     `addContactBody()` overloads. */
     int getNumContactBodiesZMP() const;
 
@@ -147,7 +217,7 @@ public:
             const std::string& name, const std::string& body_name);
 
     // TODO: other ways in which contact body can be added? Other parameters...?
-    
+
     /** Set the free joint name in the component. */
     void setFreeJointName(const std::string& free_joint_name);
 
@@ -158,32 +228,41 @@ public:
     /** Set the force threshold for considering when ground contact
     has occurred. */
     void setForceThreshold(const double& force_threshold);
-    
+
     /** These functions calculate the Zero Moment Point of the model based
     on the Model state. It identifies the ground reaction forces, moments
     and centre of pressure for each contact body connected to the component.
     The output is returned as a Vector which size is based on the number of
     contact bodies and the separate force, moment and point components,
-    
+
     i.e.
 
-        FXn, FYn, FZn, MXn, MYn, MZn, PXn, PYn, PZn
-    
+        FXn, FYn, FZn, MXn, MYn, MZn, PXn, PYn, PZn --- TODO: order needs to be changed!
+
     where n is repeated for the number of contact bodies specified.*/
     SimTK::Vector calcGroundReactions(const SimTK::State& s) const;
     SimTK::Vector calcGroundReactions(const SimTK::State& s,
-        const SimTK::Vector& udot, bool unilateralContact) const;
-
+            const SimTK::Vector& udot, bool unilateralContact) const;
 
     /*SimTK::Vec3 getGroundReactionForces(const SimTK::State& s) const;
     SimTK::Vec3 getGroundReactionMoments(const SimTK::State& s) const;
     SimTK::Vec3 getGroundReactionPoints(const SimTK::State& s) const;*/
 
 private:
+
     void constructProperties();
     void extendFinalizeFromProperties() override;
-    
+
 };
+
+
+
+
+
+
+
+
+
 
 } // namespace OpenSim
 
