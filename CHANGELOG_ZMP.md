@@ -1,28 +1,42 @@
 Zero Moment Point (ZMP) Change Log
 ===============
 
-**ADDED:**
+The changes to the OpenSim core code associated with the Zero Moment Point approaches included as part of this repository are summarised below.
 
-- `ZeroMomentPointGroundReactions` component to Model components
-  - See `ZeroMomentPointGroundReactions.cpp/h` for details
+## Classes
+
+- The `ZeroMomentPointGroundReactions` class was added as a `ModelComponent`. This class serves as a base for most calculations associated with the ZMP estimates of ground reactions.
+- The `ZeroMomentPointContactBodySet` was added as a `ModelComponentSet`. This serves as a convenience class to store `ZeroMomentContactBody` objects within the main `ZeroMomentPointGroundReactions` component.
+- The `ZeroMomentPointContactBody` class was added as a `ModelComponent`. This class sits underneath the `ZeroMomentPointGroundReactions` object within a `ZeroMomentPointContactBodySet` to identify bodies in the model that are expected and checked for ground contact.
+- The `ZeroMomentPointContactPointSet` was added as a `ModelComponentSet`. This serves as a convenience class to store `ZeroMomentContactPoint` objects within each `ZeroMomentPointContactBody` component.
+- The `ZeroMomentPointContactPoint` class was added as a `Station`. This class sits underneath the `ZeroMomentPointContactBody` object within a `ZeroMomentContactPointSet` to specify points on a body that are queried with respect to their distance relative to the ground and (if requested) velocity. Thresholds are provided with each point to determine if the point is deemed in contact with the ground (i.e. the values are under the thresholds). 
+- **TODO:** `ZeroMomentPointContactForce` as a `Force` class
+  - A force will be connected to each contact body, subsequently reading the forces to apply to the body at the designated point
+- **TODO:** `ZeroMomentPointContactPointConstraint` as a `UnilateralConstraint` class
+  - Points that prevent contact penetration with the ground
+- **TODO:** `MocoZeroMomentPointContactTrackingGoal`
+  - `MocoGoal` that tracks the forces from the `ZeroMomentPointContactForce` object in a similar way that is done to the contact tracking goal with contact spheres
+  - Can consider that this could track both forces and COP
+- TODO: `ZeroMomentPointCopConstraint`
+  - Some sort of `Constraint` that somehow constrains the COP to remain within the boundaries or near the contact points. If nearby it would need a distance parameter to ensure the COP isn't more than a certain distance from estimated point. 
+- **NOTE:** potentially a little bloated with the number of classes needed for this...
+
+
+
+## Examples
+
+### ZMP Component Demo
+
+This example demonstrates how to create and connect the various new classes to a model, alongside a few demonstrations of key functions related to the ZMP estimates of ground reactions (e.g. checking for ground contact). 
+
+### ZMP Ground Reactions from Motion
+
+This example uses the `ZeroMomentPointGroundReactions` class with the `ZeroMomentPointContactBody` and `ZeroMomentPointContactBodyPoint` classes to estimate ground reactions (forces, centre of pressure, moments) from a specified motion. The motion comes from a Moco tracking solution, with a states trajectory and table of accelerations created to calculate the ground reactions. The data comes from treadmill running, therefore the ground contact points are checked using the distance only method as the velocity of the contact points is influenced by the foot moving on the treadmill. The output of this example is a `.mot` file similar to what you would create from experimental ground reaction forces (and subsequently create an associated `ExternalLoads` `.xml` file for).
 
 **TODO:**
 
-- **<u>Class structures</u>**
-  - `ZeroMomentPointGroundReactions` as a *model component*
-    - `ZeroMomentPointContactBody` as an *object* that can be used within the overarching component
-      - `ZeroMomentPointContactBodyPoint` as an *object* that can be used within the contact body object (i.e. store points that are queried for ground contact)
-  - `ZeroMomentPointForce` as a *force* that is connected to the overarching component
-    - Can a point force apply multiple separate forces, or does one need to be connected to each contact body? Everything probably needs to be connected to the overarching component as there are times when multiple forces/contact points are applied.
-    - Alternatively, it might be easier to have a single force for each contact body, and connect it up to that contact body via setting names or some other parameter. The index of the contact body could be found in some way, and therefore the force and COP components for that body be identified and used with the force.
-  - `MocoZeroMomentPointTrackingGoal` as a *Moco Goal* that can track forces, moments and COP
-  - `ZeroMomentPointCopConstrain` as a *constraint* that somehow constrains the COP to remain within boundaries of contact points, or maybe even nearby (i.e. what if only 1 or 2 points are in contact with ground)
-    - If nearby, it would need a distance parameter to ensure the COP isn't more than X distance from a contact point
-- **<u>Create example scripts that demonstrate component use:</u>**
-  - `exampleZeroMomentPoint1_createAndConnectComponents.cpp`: simple script to show how components can be created and connected to a blank model
-    - ***Done OK - consider adding force class to example***
-  - `exampleZeroMomentPoint2_estimateFromMotion.cpp`: estimating GRFs and COP from existing kinematics (i.e. passing udot through generated from speeds) — much simpler than state-to-state computation
-  - `exampleZeroMomentPoint3_estimateFromState.cpp`: estimating GRFs and COP from a singular state — which would probably require more complete simulation inputs (i.e. underlying forces etc.)
-  - `exampleZeroMomentPoint4_trackingSimulation.cpp`: running a Moco tracking problem using the component
-  - `exampleZeroMomentPoint5_predictiveSimulation.cpp`: running a Moco predictive problem and exporting the GRFs and COP estimated from the component?
+- `exampleZmpGroundReactionsFromState.cpp`: estimating GRFs and COP from a singular state — which would probably require more complete simulation inputs (i.e. underlying forces etc.)
+- `exampleZmpContactForce.cpp`: working through a series of states apply the forces from the ZMP estimates to a model. Run inverse dynamics on this plus the original model with external loads included, and theoretically the inverse dynamics outputs should be similar.
+- `exampleZmpTrackingSimulation.cpp`: running a Moco tracking problem using the component
+- `exampleZmpPredictiveSimulation.cpp`: running a Moco predictive problem and exporting the GRFs and COP estimated from the component?
 

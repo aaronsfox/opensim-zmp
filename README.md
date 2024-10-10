@@ -1,4 +1,11 @@
+**TODO: Add notes on ZMP additions to the standard OpenSim repository.**
+
+Below are the base details and instructions provided with the original OpenSim source code.
+
+
+
 <!-- OpenSim Logo -->
+
 <p align=center>
     <a href="https://opensim.stanford.edu/">
         <img src="https://drive.google.com/uc?id=1urYfucgR4pCM5OeXySMBVc3i5oGfYRAf" alt="OpenSim Logo">
@@ -48,7 +55,7 @@ This repository contains:
  - OpenSim's C++ examples.
  - OpenSim's command-line applications (inverse kinematics, computed muscle control, etc.).
  - OpenSim's Java and Python bindings.
- 
+
 This repository does *not* include source code for the OpenSim GUI. The source code for the Opensim GUI can be found [here](https://github.com/opensim-org/opensim-gui).
 
 ## Download and Setup

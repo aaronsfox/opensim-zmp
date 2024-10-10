@@ -1,7 +1,7 @@
 /* -------------------------------------------------------------------------- *
  * OpenSim: ZeroMomentPointGroundReactions.cpp                                *
  * -------------------------------------------------------------------------- *
- * Copyright (c) 2020 Stanford University and the Authors                     *
+ * Copyright (c) 2024 Stanford University and the Authors                     *
  *                                                                            *
  * Author(s): Aaron Fox                                                       *
  *                                                                            *
@@ -16,274 +16,392 @@
  * limitations under the License.                                             *
  * -------------------------------------------------------------------------- */
 
-// TODO: any other inclusions?
-
 #include "ZeroMomentPointGroundReactions.h"
+#include "ZeroMomentPointContactBody.h"
+#include "ZeroMomentPointContactBodySet.h"
+#include "ZeroMomentPointContactPoint.h"
+#include "ZeroMomentPointContactPointSet.h"
 
 #include <SimTKcommon/internal/State.h>
 
 #include <OpenSim/Common/Component.h>
+#include "OpenSim/Common/IO.h"
 #include <OpenSim/Simulation/Model/Model.h>
 #include <OpenSim/Simulation/InverseDynamicsSolver.h>
+#include <OpenSim/Simulation/SimulationUtilities.h>
 
 using namespace OpenSim;
-
-
-/* -------------------------------------------------------------------------- *
- * ZeroMomentPointGroundReactions                                             *
- * -------------------------------------------------------------------------- *
- * Add instructional content related to the ZeroMomentPointGroundReactions    *
- * class...                                                                   *
- *                                                                            *
- *                                                                            *
- *                                                                            *
- * -------------------------------------------------------------------------- */
+//=============================================================================
+//=============================================================================
+/**
+ * The ZeroMomentPointGroundReactions is a model component used to calculate
+ * estimates of ground reactions (i.e. forces, moments and point of application)
+ * from a model at a particular state. This allows a prediction of the ground
+ * reactions from a motion where experimental measures were unavailable. The
+ * component requires the bodies that are expected to come into contact with the
+ * ground to be specified, alongside points on the contact bodies (or nearby
+ * bodies) that are checked for specifying when ground contact has occurred. The
+ * component can also be connected to the ZeroMomentPointContactForce class so
+ * that the estimated ground reactions can be applied as external forces to the
+ * model during dynamic simulations.
+ *
+ * Ground reactions are estimated via the Zero Moment Point method when ground
+ * contact is identified. Ground contact is identified by first checking if the
+ * contact points meet the criteria for ground contact - either based on
+ * distance from the ground plane (which is assumed to be the XZ plane) or by
+ * both distance to the ground plane and meeting a velocity threshold. A force
+ * threshold is also specified for if ground contact has occurred, whereby if
+ * the vertical force (assumed to be in the y-direction) is greater than the
+ * force threshold then ground contact is occurring.
+ *
+ * The Zero Moment Point method is outlined in Xiang et al. (2009) and an
+ * implementation to predicting GRFs during gait explored by Dijkstra &
+ * Gutierrez-Farewik (2015). The method for checking ground contact with points
+ * on a body is similar to the method implemented in Karcnik (2003).
+ *
+ * Xiang et al. (2009): https://doi.org/10.1002/nme.2575
+ * Dijkstra & Gutierrez-Farewik (2015):
+ * https://doi.org/10.1016/j.jbiomech.2015.08.027 Karcnik  (2003):
+ * https://doi.org/10.1007/BF02345310).
+ *
+ * @authors Aaron Fox
+ * @version 1.0
+ */
 
 //=============================================================================
-//  METHODS: ZeroMomentPointGroundReactions
+//  CONSTRUCTORS
 //=============================================================================
 
-// Default constructor
+/** Default constructor */
 ZeroMomentPointGroundReactions::ZeroMomentPointGroundReactions() {
+    
+    // Construct with default properties
     constructProperties();
 
 }
 
-// TODO: add any other general constructors?
+/** Constructor specifying free joint name with other defaults. */
+ZeroMomentPointGroundReactions::ZeroMomentPointGroundReactions(
+        const std::string& freeJointName) {
 
-// Get number of contact bodies
-int ZeroMomentPointGroundReactions::getNumContactBodiesZMP() const {
-    return getProperty_zmp_contact_bodies().size();
+    // Construct with default properties
+    constructProperties();
+
+    // Set the free joint name
+    set_free_joint_name(freeJointName);
+
 }
 
-// Add a contact body specified with a name label and the contact body name
-void ZeroMomentPointGroundReactions::addContactBodyZMP(
-    const std::string& name, const std::string& body_name) {
+/** Constructor specifying free joint name and force threshold. */
+ZeroMomentPointGroundReactions::ZeroMomentPointGroundReactions(
+    const std::string& freeJointName, const double& forceThreshold) {
 
-    append_zmp_contact_bodies(ZeroMomentPointContactBody());
+    // Construct with default properties
+    constructProperties();
 
-    // Get updated parameters for contact body
-    auto& cb =
-            upd_zmp_contact_bodies(getProperty_zmp_contact_bodies().size() - 1);
+    // Set the free joint name
+    set_free_joint_name(freeJointName);
+
+    // Set the force threshold
+    set_force_threshold(forceThreshold);
+
+}
+
+/** Construct default properties */
+void ZeroMomentPointGroundReactions::constructProperties() {
+
+    // Contact body set
+    ZeroMomentPointContactBodySet contactBodySet;
+    contactBodySet.setName(
+            IO::Lowercase(contactBodySet.getConcreteClassName()));
+    constructProperty_ZeroMomentPointContactBodySet(contactBodySet);
+
+    // Standard properties
+    constructProperty_free_joint_name("ground_pelvis");
+    constructProperty_force_threshold(20.0);
+}
+
+/** Finalize properties */
+void ZeroMomentPointGroundReactions::extendFinalizeFromProperties() {}
+
+/** Connection to model */
+void ZeroMomentPointGroundReactions::extendConnectToModel(Model& model) {
     
-    // Set the name as specified
-    cb.setName(name);
+    // Base class first
+    Super::extendConnectToModel(model);
+
+}
+
+/** Topology and creating contact body map */
+void ZeroMomentPointGroundReactions::extendRealizeTopology(
+        SimTK::State& state) const {
+    
+    // Base class first
+    Super::extendRealizeTopology(state);
+
+    // Clear contact body map variable
+    m_contactBodyIndices.clear();
+
+    // Assign indices in map
+    for (int ii = 0; ii < get_ZeroMomentPointContactBodySet().getSize(); ++ii) {
+        const ZeroMomentPointContactBody& contactBody = get_ZeroMomentPointContactBodySet().get(ii);
+        m_contactBodyIndices[contactBody.getName()] = ii;        
+    }
+
+}
+
+/** Add component to system */
+void ZeroMomentPointGroundReactions::extendAddToSystem(
+        SimTK::MultibodySystem& system) const {
+
+    // Base class first
+    Super::extendAddToSystem(system);
+
+    // Set cache variables
+    /*this->_groundReactionsCV = addCacheVariable("ground_reactions", 
+        SimTK::Vector((int)m_contactBodyIndices.size() * 9, 0.0),
+        SimTK::Stage::Dynamics);*/
+
+}
+
+//=============================================================================
+//  METHODS
+//=============================================================================
+
+/** Specify a contact body that should be considered when reviewing if
+the model has come into contact with the ground plane. Uses default
+value of velocity for contact checking method.*/
+void ZeroMomentPointGroundReactions::addContactBody(
+    const std::string& name, const std::string& bodyName) {
+
+    // Create the contact body with default properties
+    /*ZeroMomentPointContactBody& cb =
+            ZeroMomentPointContactBody();*/
+    ZeroMomentPointContactBody* cb =
+            new ZeroMomentPointContactBody();
+
+    // Set the name
+    cb->setName(name);
 
     // Set the body name
-    cb.set_body_name(body_name);
+    cb->set_body_name(bodyName);
+
+    // Append to the contact body set
+    //upd_ZeroMomentPointContactBodySet().cloneAndAppend(cb);
+    updZeroMomentPointContactBodySet().adoptAndAppend(cb);
+
+    // TODO: needed somewhere?
+    //// Finalize properties
+    //finalizeFromProperties();
+    //prependComponentPathToConnecteePath(cb);
 
 };
 
-// TODO: add any other addContactBody constructors...with checkpoints included?
+/** Specify a contact body that should be considered when reviewing if
+the model has come into contact with the ground plane, while also
+specifying the contact checking method.*/
+void ZeroMomentPointGroundReactions::addContactBody(
+        const std::string& name, const std::string& bodyName,
+        const std::string& contactCheckingMethod) {
 
-// Set the free joint name in the component
+    // TODO: checks in place for contact checking method strings
+
+    // Create the contact body with default properties
+    /*ZeroMomentPointContactBody& cb = 
+        ZeroMomentPointContactBody();*/
+    ZeroMomentPointContactBody* cb = 
+        new ZeroMomentPointContactBody();
+
+    // Set the name
+    cb->setName(name);
+
+    // Set the body name
+    cb->set_body_name(bodyName);
+
+    // Set the contact checking method
+    cb->set_zmp_contact_checking_method(contactCheckingMethod);
+
+    // Append to the contact body set
+    //upd_ZeroMomentPointContactBodySet().cloneAndAppend(cb);
+    updZeroMomentPointContactBodySet().adoptAndAppend(cb);
+
+    // TODO: needed somewhere?
+    //// Finalize properties
+    //finalizeFromProperties();
+    //prependComponentPathToConnecteePath(cb);
+
+};
+
+/** Set the free joint name in the component. */
 void ZeroMomentPointGroundReactions::setFreeJointName(
         const std::string& free_joint_name) {
-
     set_free_joint_name(free_joint_name);
-
 };
 
-// Set the distance threshold for a checkpoint to be considered
-// in contact with the ground plane.
-void ZeroMomentPointGroundReactions::setDistanceThreshold(
-        const double& distance_threshold) {
-
-    set_distance_threshold(distance_threshold);
-
-}
-
-// Set the force threshold for considering when ground contact
-// has occurred
+/** Get and set the force threshold for considering when ground contact
+has occurred. */
 void ZeroMomentPointGroundReactions::setForceThreshold(
         const double& force_threshold) {
-
     set_force_threshold(force_threshold);
 }
 
-// Constructor properties
-void ZeroMomentPointGroundReactions::constructProperties() {
-    
-    constructProperty_zmp_contact_bodies();
-
-    // Free joint that connects the model to the ground
-    constructProperty_free_joint_name("ground_pelvis");
-
-    // Distance threshold to check ground contact with body (default = 0.01m)
-    constructProperty_distance_threshold(0.01);
-
-    // Vertical force threshold specifying ground contact (default = 20N)
-    constructProperty_force_threshold(20.0);
-
-}
-
-// TODO: needed?
-void ZeroMomentPointGroundReactions::extendFinalizeFromProperties() {
-
-}
-
 //=============================================================================
-//  FUNCTIONS: ZeroMomentPointGroundReactions
+//  CALCULATIONS
 //=============================================================================
 
-// Calculating ground reactions when only the state is provided
-SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
+/** Check ground contact of each contact body specified. Returns a vector
+of 1 or 0 for each contact body specifying if contact has or has not
+occurred. */
+SimTK::Vector ZeroMomentPointGroundReactions::checkGroundContact(
         const SimTK::State& s) const {
 
-    /*This function calculates the Zero Moment Point of the model based on
-    the Model state. It identifies the ground reaction forces, moments
-    and centre of pressure for each contact body connected to the component.
-    The output is returned as a Vector which size is based on the number of
-    contact bodies and the separate force, moment and point components, i.e.:
-       
-    FXn, FYn, FZn, MXn, MYn, MZn, PXn, PYn, PZn --- todo: this order needs to change!
+    /* This function takes the state and checks if the contact points allocated
+    to a body are in contact with the ground based on a distance and velocity
+    threshold. If any points meet the criteria then the body is said to be in
+    contact with the ground. However, if useVelocity is set to FALSE then only
+    the distance threshold is considered (i.e. velocity ignored). 
     
-    where n is repeated for the number of contact bodies specified.*/
+    This approach reflects that outlined in Karcnik (2003):
+    https://doi.org/10.1007/BF02345310 */
 
-    // TODO:
-    //    > Am I Getting variables appropriately?
-    //    > This is a more incomplete version of this function...
+    // Get the model
+    const Model& model = getModel();
+
+    // Realize to acceleration stage
+    model.getMultibodySystem().realize(s, SimTK::Stage::Acceleration);
+
+    // Get the number of contact bodies
+    const int nCB = get_ZeroMomentPointContactBodySet().getSize();
+
+    // Create a vector to store whether the array is vs. isn't in ground contact
+    SimTK::Vector bodyInContact = SimTK::Vector(nCB);
+
+    // Loop through contact bodies and check for contact
+    for (int iCB = 0; iCB < (nCB); iCB++) {
+
+        // Get the contact checking method for the current body
+        std::string checkingMethod = get_ZeroMomentPointContactBodySet()
+                                             .get(iCB)
+                                             .get_zmp_contact_checking_method();
+
+        // Get the number of contact body points linked to this contact body
+        int nCBP = get_ZeroMomentPointContactBodySet()
+                           .get(iCB).get_ZeroMomentPointContactPointSet().getSize();
+
+        // Create a vector to store if points are in contact
+        SimTK::Vector pointInContact = SimTK::Vector(nCBP);
+
+        // Loop through contact body points for the current contact body
+        for (int iCBP = 0; iCBP < (nCBP); iCBP++) {
+
+            // Get the body name, location and thresholds for the
+            // current contact point
+            ZeroMomentPointContactPoint& contactPoint =
+                    get_ZeroMomentPointContactBodySet()
+                            .get(iCB)
+                            .get_ZeroMomentPointContactPointSet()
+                            .get(iCBP);
+            std::string bodyName = contactPoint.get_body_name();
+            SimTK::Vec3 pointLoc = contactPoint.get_location();
+            double distanceThreshold = contactPoint.get_distance_threshold();
+            double velocityThreshold = contactPoint.get_velocity_threshold();
+
+            // Check if point is in contact based on proposed checking method
+            if (checkingMethod == "velocity") {
+
+                std::cout << "TODO: distance and velocity contact checking"
+                          << std::endl;
+
+            } else {
+
+                // Calculate the position of the current contact point in the
+                // ground and it's vertical level (y-axis). Check if this
+                // vertical level is within the the specified distance
+                // threshold.
+                if (model.getBodySet()
+                                .get(bodyName)
+                                .findStationLocationInGround(s, pointLoc)
+                                .get(1) < distanceThreshold) {
+
+                    // Specify that the point is in contact
+                    pointInContact.set(iCBP, 1);
+
+                } else {
+
+                    // Specify that the point is not in contact
+                    pointInContact.set(iCBP, 0);
+
+                }
+            }
+        }
+
+        // If any of the points are in contact then the body can be set as
+        // in contact
+        if (pointInContact.sum() > 0) {
+
+            // At least one of the points is in contact with the ground
+            bodyInContact.set(iCB, TRUE);
+
+        } else {
+
+            // The contact body point is not in contact with the ground
+            bodyInContact.set(iCB, FALSE);
+
+        }
+
+    }
+
+    // Return the vector of if the bodies are in contact
+    return bodyInContact;
+
+}
+
+/** The below functions calculate the Zero Moment Point of the model based
+on the Model state and any other provided inputs. It identifies the ground
+reaction forces, moments and centre of pressure for each contact body
+listed in the component. The output is returned as a Vector which size is
+based on the number of contact bodies. Each component of the Vector contains
+a spatial vector that contains the separate force, moment and point
+components.
+
+    i.e.
+
+        FX, FY, FZ, PX, PY, PZ, MX, MY, MZ
+
+which is repeated for the number of contact bodies in the component.*/
+
+// TODO: consider using Vector of SpatialVec for output from ground reactions...
+
+/** Calculate ground reactions from state. This is a simpler function that
+uses the state to get udot and then feeds back to the other function. */
+SimTK::Vector ZeroMomentPointGroundReactions::getGroundReactions(
+        const SimTK::State& s) const {
 
     // Get the model
     const auto& model = getModel();
-
-    // Get the free body name and associated joint
-    const std::string freeJointName = get_free_joint_name();
-    const Joint& freeJoint = model.getJointSet().get(freeJointName);
-
-    // Get the number of contact bodies
-    const int nCB = getProperty_zmp_contact_bodies().size();
-
-    // Get the desired force threshold property
-    const double forceThreshold = get_force_threshold();
-
-    // Create the vector to fill with the calculated ground reactions
-    // Size is based on the number of contact bodies * 3x3 (F, M and P)
-    SimTK::Vector groundReactionsVec = SimTK::Vector(9 * nCB);
-
-    // OpenSim::Coordinates represent degrees of freedom for a model.
-    // Each Coordinate's value and speed maps to an index
-    // in the model's underlying SimTK::State (value to a slot in the
-    // State's q, and speed to a slot in the State's u).
-    // So we need to map each OpenSim::Coordinate value and speed to the
-    // corresponding SimTK::State's q and u indices, respectively.
-    auto coords = model.getCoordinatesInMultibodyTreeOrder();
-    int nq = s.getNQ();
-    int nu = s.getNU();
-    int nCoords = (int)coords.size(); // TODO: needed?
-    // int intUnusedSlot = -1; // TODO: needed?
-
-    // TODO: does the mapCoordinateToQ vector from ID Tool need to be created here?
-
-    // Initialise an inverse dynamics solver with model
-    InverseDynamicsSolver ivdSolver(model);
 
     // Realize to appropriate stage
     model.getMultibodySystem().realize(s, SimTK::Stage::Dynamics);
 
-    // Compute accelerations for current state
-    // NOTE: unsure whether this produces the desired accelerations?
-    // Different results using this versus an entire MocoTrajectory?
-    SimTK::Vector udot = model.getMatterSubsystem().getUDot(s);
+    // Get accelerations from state
+    // TODO: is this the right way to do it? Comes out as zeros sometimes?
+    SimTK::Vector udot = s.getUDot();
 
-    // Solve inverse dynamics given current states and udot
-    // The output vector contains the generalised coordinate forces
-    // to generate the accelerations based on the current state.
-    // Note that these aren't necessarily in the order of the
-    // coordinate set, but rather the multibody tree order.
-    SimTK::Vector genForceTraj = ivdSolver.solve(s, udot);
+    // Feed state and udot into detailed function to return ground reactions
+    SimTK::Vector groundReactions = getGroundReactions(s, udot);
 
-    ///* TODO: mapping if q != u in index(i.e.tree vs.model)... */
-
-    // Calculate the equivalent body force at the free joint in the model
-    SimTK::SpatialVec equivalentBodyForceAtJoint = freeJoint.calcEquivalentSpatialForce(s, genForceTraj);
-
-    // Extract the body and torque components
-    SimTK::Vec3 freeBodyTorque = equivalentBodyForceAtJoint.get(0);
-    SimTK::Vec3 freeBodyForce = equivalentBodyForceAtJoint.get(1);
-
-    // First determine whether generic ground contact is occurring
-    // based on force threshold
-    if (freeBodyForce.get(1) > forceThreshold) {
-        
-        // Get the position of the free body in the ground frame
-        // This is based on getting the child frame of the free joint
-        // and hence assumes that the ground should always be the parent.
-        // I think getting the frames position in the ground should
-        // represent it's translational coordinates, as it appears this
-        // is robust to any frame translation in the model. Similarly,
-        // using the frames origin (i.e. 0,0,0) as the station seems to
-        // also be appropriate for simply getting the translational values.
-        SimTK::Vec3 rp = freeJoint.getChildFrame().findStationLocationInGround(
-                s, SimTK::Vec3(0, 0, 0));
-
-        // Take the cross product of free body position and force vector to get
-        // moment at origin in ground
-        SimTK::Vec3 groundM = SimTK::Vec3((rp.get(1) * freeBodyForce.get(2)) - (rp.get(2) * freeBodyForce.get(1)),
-            -((rp.get(0) * freeBodyForce.get(2)) - (rp.get(2) * freeBodyForce.get(0))),
-            (rp.get(0) * freeBodyForce.get(1)) - (rp.get(1) * freeBodyForce.get(0)));
-
-        // Calculate X & Z cZMP, noting that yZMP is set as 0
-        // Given this (and some other calculations) the standard OpenSim
-        // coordinate system must be used.
-        // Formulas used here come from Xiang et al. 2009:
-        // https://doi.org/10.1002/nme.2575
-        SimTK::Vec3 zmpCOP = SimTK::Vec3(groundM.get(2) / freeBodyForce.get(1),
-            0,
-            -groundM.get(0) / freeBodyForce.get(1));
-
-        // Calculate the resultant active moment at ZMP along the y-axis
-        // TODO : this still seems wrong --- off by factor of 10?
-        // Check Xiang et al.
-        double myZMP = groundM.get(1) + (freeBodyForce.get(0) * zmpCOP.get(2)) -
-                       (freeBodyForce.get(2) * zmpCOP.get(0));
-
-        // Check the contact bodies for contact with the ground
-        /*for (int i = 0; i < 5; i++) { cout << i << "\n"; }*/
-
-        //const int nCB = getProperty_contact_body().size();
-
-        //getProperty_contact_body().get(0)
-
-
-
-
-    } // else allocate zeros in vector...
+    return groundReactions;
 
 }
 
-// Calculating ground reactions when udot is provided alongside the accelerations
-// TODO: currently no checks related to udot matching model
+/** Calculate ground reactions with state and udot accelerations vector.*/
+SimTK::Vector ZeroMomentPointGroundReactions::getGroundReactions(
+        const SimTK::State& s, const SimTK::Vector& udot) const {
 
-SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
-        const SimTK::State& s, const SimTK::Vector& udot, bool unilateralContact) const {
-
-    // TODO: determine whether contact bodies are in contact with ground...
-    //
-    // Probably need marker distance AND vertical velocity
-    // (i.e. during walking trial markers cna be penetrating ground while
-    // moving...)
-    //
-    // Subsequent calculation steps are fairly dependent on this...
-    // Xiang et al. denotes contact points on the foot that seemingly can't
-    // penetrate the ground (e.g. some sort of constraint on these?)
-    // When the vertical height (y-axis) of contact points = 0, ground contact
-    // is present The ZMP is constrained to remain within these boundaries ---
-    // but that doesn't seem feasible in a basic calculation...maybe in a
-    // dynamic simulation though...
-
-    /*This function calculates the Zero Moment Point of the model based on
-    the Model state. It identifies the ground reaction forces, moments
-    and centre of pressure for each contact body connected to the component.
-    The output is returned as a Vector which size is based on the number of
-    contact bodies and the separate force, moment and point components, i.e.:
-
-    FXn, FYn, FZn, MXn, MYn, MZn, PXn, PYn, PZn
-
-    where n is repeated for the number of contact bodies specified.*/
-
-    // TODO:
-    //    > Am I Getting variables appropriately?
+    ///* TODO: mapping if q != u in index (i.e.tree vs.model)... */
+    ///     - Not sure it matters as calcEquivalentSpatial force seems to work...
+    ///* TODO: getting the MY calculation correct - currently staying as zero...
+    ///*/
 
     // Get the model
     const auto& model = getModel();
@@ -293,7 +411,7 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
     const Joint& freeJoint = model.getJointSet().get(freeJointName);
 
     // Get the number of contact bodies
-    const int nCB = getProperty_zmp_contact_bodies().size();
+    const int nCB = get_ZeroMomentPointContactBodySet().getSize();
 
     // Get the desired force threshold property
     const double forceThreshold = get_force_threshold();
@@ -313,223 +431,267 @@ SimTK::Vector ZeroMomentPointGroundReactions::calcGroundReactions(
     // Realize to appropriate stage
     model.getMultibodySystem().realize(s, SimTK::Stage::Dynamics);
 
-    // Solve inverse dynamics given current states and udot
-    // The output vector contains the generalised coordinate forces
-    // to generate the accelerations based on the current state.
-    // Note that these aren't necessarily in the order of the
-    // coordinate set, but rather the multibody tree order.
-    SimTK::Vector genForceTraj = ivdSolver.solve(s, udot);
-    /*std::cout << "Printing ID forces";
-    std::cout << genForceTraj;*/
+    // Check the contact bodies for ground contact
+    SimTK::Vector inContact(nCB);
+    inContact = checkGroundContact(s);
 
-    ///* TODO: mapping if q != u in index(i.e.tree vs.model)... */
+    // Determine whether contact has occurred
+    bool contactOccurring = FALSE;
+    if (inContact.sum() > 0) { contactOccurring = TRUE; }
 
-    // Calculate the equivalent body force at the free joint in the model
-    SimTK::SpatialVec equivalentBodyForceAtJoint =
-            freeJoint.calcEquivalentSpatialForce(s, genForceTraj);
+    // Proceed through subsequent calculations only if contact occurring
+    if (contactOccurring) {
 
-    // Extract the body and torque components
-    SimTK::Vec3 freeBodyTorque = equivalentBodyForceAtJoint.get(0);
-    SimTK::Vec3 freeBodyForce = equivalentBodyForceAtJoint.get(1);
+        // Solve inverse dynamics given current states and udot
+        // The output vector contains the generalised coordinate forces
+        // to generate the accelerations based on the current state.
+        // Note that these aren't necessarily in the order of the
+        // coordinate set, but rather the multibody tree order.
+        SimTK::Vector genForceTraj = ivdSolver.solve(s, udot);
 
-    /*std::cout << freeBodyForce;
-    std::cout << freeBodyTorque;*/
+        // Calculate the equivalent body force at the free joint in the model
+        SimTK::SpatialVec equivalentBodyForceAtJoint =
+                freeJoint.calcEquivalentSpatialForce(s, genForceTraj);
 
-    // First determine whether generic ground contact is occurring
-    // based on force threshold
-    if (freeBodyForce.get(1) > forceThreshold) {
+        // Extract the body and torque components in ground frame
+        SimTK::Vec3 freeBodyTorque = equivalentBodyForceAtJoint.get(0);
+        SimTK::Vec3 freeBodyForce = equivalentBodyForceAtJoint.get(1);
 
-        // Get the position of the free body in the ground frame
-        // This is based on getting the child frame of the free joint
-        // and hence assumes that the ground should always be the parent.
-        // I think getting the frames position in the ground should
-        // represent it's translational coordinates, as it appears this
-        // is robust to any frame translation in the model. Similarly,
-        // using the frames origin (i.e. 0,0,0) as the station seems to
-        // also be appropriate for simply getting the translational values.
-        
-		///* TODO: Would body centre of mass be the better station to get? */
-		
-		SimTK::Vec3 rp = freeJoint.getChildFrame().findStationLocationInGround(
-                s, SimTK::Vec3(0, 0, 0));
+        // Run a secondary check to see if free body vertical force (assumes
+        // y-axis) if greater than the desired force threshold
+        if (freeBodyForce.get(1) > forceThreshold) {
 
-        // Take the cross product of free body position and force vector to get
-        // moment at origin in ground
-        SimTK::Vec3 groundM =
-                SimTK::Vec3((rp.get(1) * freeBodyForce.get(2)) -
-                                    (rp.get(2) * freeBodyForce.get(1)),
-                        -((rp.get(0) * freeBodyForce.get(2)) -
-                                (rp.get(2) * freeBodyForce.get(0))),
-                        (rp.get(0) * freeBodyForce.get(1)) -
-                                (rp.get(1) * freeBodyForce.get(0)));
+            // Get the position of the free body in the ground frame
+            // This is based on getting the child frame of the free joint
+            // and hence assumes that the ground should always be the parent.
+            // Getting the frames position in the ground should represent it's
+            // translational coordinates, as it appears robust to frame
+            // translation in the model. The frames origin (i.e. 0,0,0) can be
+            // used as the station. An adaptation to this could be to use the
+            // centre of mass of the body frame to estimate of the ground
+            // reactions.
+            SimTK::Vec3 rp =
+                    freeJoint.getChildFrame().findStationLocationInGround(
+                            s, SimTK::Vec3(0, 0, 0));             
 
-        // Calculate X & Z cZMP, noting that yZMP is set as 0
-        // Given this (and some other calculations) the standard OpenSim
-        // coordinate system must be used.
-        // Formulas used here come from Xiang et al. 2009:
-        // https://doi.org/10.1002/nme.2575
-        SimTK::Vec3 zmpCOP = SimTK::Vec3(groundM.get(2) / freeBodyForce.get(1),
-                0, -groundM.get(0) / freeBodyForce.get(1));
+            // Calculate moment at origin
+            // Formulas used here come from Xiang et al. 2009:
+            // https://doi.org/10.1002/nme.2575
+            SimTK::Vec3 rp_fbf = SimTK::cross(rp, freeBodyForce);
+            SimTK::Vec3 groundM =
+                    SimTK::Vec3(freeBodyTorque.get(0) + rp_fbf.get(0),
+                            freeBodyTorque.get(1) + rp_fbf.get(1),
+                            freeBodyTorque.get(2) + rp_fbf.get(2));
 
-        // Calculate the resultant active moment at ZMP along the y-axis
-        // TODO : this still seems wrong --- off by factor of 10?
-        // Check Xiang et al.
-        double myZMP = ( groundM.get(1) + (freeBodyForce.get(0) * zmpCOP.get(2)) -
-                       (freeBodyForce.get(2) * zmpCOP.get(0)) ) / 1000;
+            // Calculate X & Z cZMP, noting that yZMP is set as 0
+            // Given this (and some other calculations) the standard OpenSim
+            // coordinate system must be used.
+            // Formula used here come from Xiang et al. 2009:
+            // https://doi.org/10.1002/nme.2575
+            SimTK::Vec3 zmpCOP =
+                    SimTK::Vec3(groundM.get(2) / freeBodyForce.get(1), 0,
+                        -groundM.get(0) / freeBodyForce.get(1));
 
-        // Check the contact bodies for contact with the ground
-        /*for (int i = 0; i < 5; i++) { cout << i << "\n"; }*/
+            // Calculate the resultant active moment at ZMP along the y-axis
+            // TODO: This formula still doesn't seem quite right?
+            double myZMP = groundM.get(1) +
+                           (freeBodyForce.get(0) * zmpCOP.get(2)) -
+                           (freeBodyForce.get(2) * zmpCOP.get(1));
 
-        // Check for unilateral contact flag
-        if (unilateralContact) {
+            // Check for unilateral contact
+            if (inContact.sum() == 1) {
 
-            // If unilateral contact is flagged, then the force is simply
-            // allocated to the body that is closer to the predicted COP
+                // If unilateral contact is flagged, then the force is simply
+                // allocated to the body that is deemed in contact with the
+                // ground.
 
-            // Another option is to use whichever one is closer to the ground
+                // Figure out which body index is contacting the ground
+                int contactInd;
+                for (int bb = 0; bb < nCB; bb++) {
+                    if (inContact.get(bb) == 1) { contactInd = bb; }
+                }
 
-            // NOTE: this is currently assuming there are always two bodies!
+                // Set the values at the appropriate indices in the ground
+                // reactions vector Note the MX (index = 6*nCB) and MZ (index =
+                // 8 * nCB) remain set as zero
+                groundReactionsVec.set(
+                        contactInd * 9 + 0, freeBodyForce.get(0));
+                groundReactionsVec.set(
+                        contactInd * 9 + 1, freeBodyForce.get(1));
+                groundReactionsVec.set(
+                        contactInd * 9 + 2, freeBodyForce.get(2));
+                groundReactionsVec.set(contactInd * 9 + 3, zmpCOP.get(0));
+                groundReactionsVec.set(contactInd * 9 + 4, zmpCOP.get(1));
+                groundReactionsVec.set(contactInd * 9 + 5, zmpCOP.get(2));
+                /*groundReactionsVec.set(contactInd * 9 + 7, myZMP);*/
 
-            // Get the first body and calculate distance to COP
+            } else {
 
-            // Get the body position
-            std::string body1_name = get_zmp_contact_bodies(0).get_body_name();
-            SimTK::Vec3 body1Pos = model.getBodySet().get(body1_name).findStationLocationInGround(s, SimTK::Vec3(0, 0, 0));
-
-            //// Calculate distances from body to predicted ZMP
-            //double xSqr_1 = (body1Pos.get(0) - zmpCOP.get(0)) * (body1Pos.get(0) - zmpCOP.get(0));
-            //double ySqr_1 = (body1Pos.get(1) - zmpCOP.get(1)) * (body1Pos.get(1) - zmpCOP.get(1));
-            //double zSqr_1 = (body1Pos.get(2) - zmpCOP.get(2)) * (body1Pos.get(2) - zmpCOP.get(2));
-            //double body1Dist = sqrt(xSqr_1 + ySqr_1 + zSqr_1);
-            double body1Level = body1Pos.get(1);
-
-            // Get the second body and calculate distance to COP
-
-            // Get the body position
-            std::string body2_name = get_zmp_contact_bodies(1).get_body_name();
-            SimTK::Vec3 body2Pos = model.getBodySet().get(body2_name).findStationLocationInGround(s, SimTK::Vec3(0, 0, 0));
-
-            //// Calculate distances from body to predicted ZMP
-            //double xSqr_2 = (body2Pos.get(0) - zmpCOP.get(0)) * (body2Pos.get(0) - zmpCOP.get(0));
-            //double ySqr_2 = (body2Pos.get(1) - zmpCOP.get(1)) * (body2Pos.get(1) - zmpCOP.get(1));
-            //double zSqr_2 = (body2Pos.get(2) - zmpCOP.get(2)) * (body2Pos.get(2) - zmpCOP.get(2));
-            //double body2Dist = sqrt(xSqr_2 + ySqr_2 + zSqr_2);
-            double body2Level = body2Pos.get(1);
-
-            // Allocate the forces to appropriate body in vector
-            // TODO: this needs to be cleaned up --- i.e. auto column values
-            //if (body1Dist < body2Dist) {
-            if (body1Level < body2Level) {
-
-                // Forces
-                groundReactionsVec.set(0, freeBodyForce.get(0));
-                groundReactionsVec.set(1, freeBodyForce.get(1));
-                groundReactionsVec.set(2, freeBodyForce.get(2));
-                // Torques (note zero moments for X and Y)
-                groundReactionsVec.set(12, 0.0);
-                groundReactionsVec.set(13, myZMP);
-                groundReactionsVec.set(14, 0.0);
-                // COP
-                groundReactionsVec.set(3, zmpCOP.get(0));
-                groundReactionsVec.set(4, zmpCOP.get(1));
-                groundReactionsVec.set(5, zmpCOP.get(2));
-
-            //} else if (body2Dist < body1Dist) {
-            } else if (body2Level < body1Level) {
-
-                // Forces
-                groundReactionsVec.set(6, freeBodyForce.get(0));
-                groundReactionsVec.set(7, freeBodyForce.get(1));
-                groundReactionsVec.set(8, freeBodyForce.get(2));
-                // Torques (note zero moments for X and Y)
-                groundReactionsVec.set(15, 0.0);
-                groundReactionsVec.set(16, myZMP);
-                groundReactionsVec.set(17, 0.0);
-                // COP
-                groundReactionsVec.set(9, zmpCOP.get(0));
-                groundReactionsVec.set(10, zmpCOP.get(1));
-                groundReactionsVec.set(11, zmpCOP.get(2));
-            
+                // TODO: dealing with bilateral contact
+                // There can probably only be a max of 2 contact bodies given
+                // method used
+                std::cout << "TODO: calculations with bilateral contact"
+                          << std::endl;
             }
-
-        } // else --- TODO: check for which body is contacting...
-
+        }
     }
 
     return groundReactionsVec;
-
 }
 
-/* -------------------------------------------------------------------------- *
- * ZeroMomentPointContactBody                                                 *
- * -------------------------------------------------------------------------- *
- * Add instructional content related to the ZeroMomentPointContactBody        *
- * class...                                                                   *
- *                                                                            *
- *                                                                            *
- *                                                                            *
- * -------------------------------------------------------------------------- */
+/** These functions calculate the Zero Moment Point of the model based
+on a series of states from a predefined motion. It identifies the ground
+reaction forces, moments and centre of pressure for each contact body
+listed in the component across the states provided. The output is returned
+as a Storage with the number of columns based on the number of contact
+bodies and the separate force, moment and point components.
+
+i.e.
+
+    FXn, FYn, FZn, PXn, PYn, PZn, MXn, MYn, MZn
+
+where n is repeated for the number of contact bodies specified.*/
+
+/** Calculate ground reactions from a provided states trajectory and
+accelerations table. */
+Storage ZeroMomentPointGroundReactions::getGroundReactionsFromMotion(
+        const StatesTrajectory& states, const TimeSeriesTable& udot) const {
+
+    // Get the model
+    const Model& model = getModel();
+
+    // Create the table to store ZMP results in
+    Storage zmpResults;
+
+    // Set the name in the ZMP storage
+    zmpResults.setName("ZMP Estimated Ground Reactions");
+
+    // Define number of times from states trajectory
+    int nt = states.getSize();
+
+    // Get number of contact bodies in the component
+    const int nCB = get_ZeroMomentPointContactBodySet().getSize();
+
+    // Set the contact body names for labelling
+    Array<std::string> contactBodyNames;
+    for (int iCB = 0; iCB < nCB; iCB++) {
+        std::string labelBody = get_ZeroMomentPointContactBodySet()
+            .get(iCB)
+            .get_body_name();
+        contactBodyNames.append(labelBody);
+    }
+
+    // Create the columns for storing ground reactions based on body names
+    // Ordering is Fx, Fy, Fz, Px, Py, Pz, Mx, My, Mz
+    Array<std::string> zmpLabels("time", 9 * nCB);
+    for (int iCB = 0; iCB < nCB; iCB++) {
+        zmpLabels.set(iCB * 9 + 1, contactBodyNames.get(iCB) + "_force_vx");
+        zmpLabels.set(iCB * 9 + 2, contactBodyNames.get(iCB) + "_force_vy");
+        zmpLabels.set(iCB * 9 + 3, contactBodyNames.get(iCB) + "_force_vz");
+        zmpLabels.set(iCB * 9 + 4, contactBodyNames.get(iCB) + "_force_px");
+        zmpLabels.set(iCB * 9 + 5, contactBodyNames.get(iCB) + "_force_py");
+        zmpLabels.set(iCB * 9 + 6, contactBodyNames.get(iCB) + "_force_pz");
+        zmpLabels.set(iCB * 9 + 7, contactBodyNames.get(iCB) + "_torque_x");
+        zmpLabels.set(iCB * 9 + 8, contactBodyNames.get(iCB) + "_torque_y");
+        zmpLabels.set(iCB * 9 + 9, contactBodyNames.get(iCB) + "_torque_z");
+    }
+
+    // Set the column labels in table
+    zmpResults.setColumnLabels(zmpLabels);
+
+    // Loop through times to calculate ground reactions at each state
+    for (int i = 0; i < nt; i++) {
+
+        // Get the current state
+        SimTK::State s = states[i];
+
+        // Get number of coordinates from state
+        int nq = s.getNQ();
+
+        // Get accelerations from the Moco trajectory at the current state
+        SimTK::Vector s_udot(nq);
+        for (int k = 0; k < nq; k++) {
+            s_udot.set(k, udot.getRowAtIndex(i).getAnyElt(0, k));
+        }
+
+        // Calculate ground reactions from state and udot via convenience function
+        SimTK::Vector groundReactions = getGroundReactions(s, s_udot);
+
+        // Create a state vector with the time and ZMP values
+        StateVector zmpStateVec = StateVector(s.getTime(), groundReactions);
+
+        // Append the state vector to the storage object
+        zmpResults.append(zmpStateVec);
+    
+    }
+
+    return zmpResults;
+
+}
 
 //=============================================================================
-//  METHODS: ZeroMomentPointContactBody
+//  OUTPUTS
 //=============================================================================
 
-ZeroMomentPointContactBody::ZeroMomentPointContactBody() {
-    constructProperties();
+/** The below function allows getting the ground reactions from the component as
+a model output. The output takes the form of SimTK::Vectors that specifies the
+forces, points and moments in the same way as the calculation functions:
+
+i.e.
+
+    FXn, FYn, FZn, PXn, PYn, PZn, MXn, MYn, MZn
+
+where n is repeated for the number of contact bodies specified.*/
+
+
+
+
+/** Get the forces estimated for the specified contact body. */
+SimTK::Vec3 ZeroMomentPointGroundReactions::getContactBodyForces(
+    const SimTK::State& s, const std::string& bodyName) const 
+{
+
+    /*if (isCacheVariableValid(s, _groundReactionsCV)) {
+        return getCacheVariableValue(s, _groundReactionsCV);
+    }*/
+
+    
+
+    //// Run the calculation function with the input state
+    //SimTK::Vector groundReactionsOut = getGroundReactions(s);
+
+    // Get the contact body index for the specified body object
+    const int& bodyInd = m_contactBodyIndices.at(bodyName);
+
+    // TODO: just default values at the moment
+    SimTK::Vec3 forces = SimTK::Vec3(0);
+
+    return forces;
+
 }
 
-void ZeroMomentPointContactBody::constructProperties() {
+/** Get the moments estimated for the specified contact body. */
+SimTK::Vec3 ZeroMomentPointGroundReactions::getContactBodyMoments(
+        const SimTK::State& s, const std::string& bodyName) const {
 
-    constructProperty_body_name("NONE");
-    constructProperty_zmp_contact_body_points();
+    //// Run the calculation function with the input state
+    // SimTK::Vector groundReactionsOut = getGroundReactions(s);
 
+    // TODO: just default values at the moment
+    SimTK::Vec3 moments = SimTK::Vec3(0);
+
+    return moments;
 }
 
-void ZeroMomentPointContactBody::addContactBodyPoint(
-    const std::string& point_name,
-    const std::string& body_name,
-    const SimTK::Vec3& point_location) {
+/** Get the point of application estimated for the specified contact body. */
+SimTK::Vec3 ZeroMomentPointGroundReactions::getContactBodyPoint(
+        const SimTK::State& s, const std::string& bodyName) const {
 
-    // Append provided value to list of contact body points
-    append_zmp_contact_body_points(ZeroMomentPointContactBodyPoint());
+    //// Run the calculation function with the input state
+    // SimTK::Vector groundReactionsOut = getGroundReactions(s);
 
-    // Get updated parameters for the contact body point
-    auto& cbp = upd_zmp_contact_body_points(
-            getProperty_zmp_contact_body_points().size() - 1);
+    // TODO: just default values at the moment
+    SimTK::Vec3 point = SimTK::Vec3(0);
 
-    // Set the name as specified
-    cbp.setName(point_name);
-
-    // Set the body name
-    cbp.set_body_name(body_name);
-
-    // Set the point location
-    cbp.set_location(point_location);
-
-}
-
-
-/* -------------------------------------------------------------------------- *
- * ZeroMomentPointContactBodyPoint                                            *
- * -------------------------------------------------------------------------- *
- * Add instructional content related to the ZeroMomentPointContactBodyPoint   *
- * class...                                                                   *
- *                                                                            *
- *                                                                            *
- *                                                                            *
- * -------------------------------------------------------------------------- */
-
-//=============================================================================
-//  METHODS: ZeroMomentPointContactBody
-//=============================================================================
-
-ZeroMomentPointContactBodyPoint::ZeroMomentPointContactBodyPoint() {
-    constructProperties();
-}
-
-void ZeroMomentPointContactBodyPoint::constructProperties() {
-
-    constructProperty_body_name("NONE");
-    constructProperty_location(SimTK::Vec3(0,0,0));
-
+    return point;
 }
