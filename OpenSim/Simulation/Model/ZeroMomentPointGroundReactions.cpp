@@ -301,7 +301,7 @@ SimTK::Vector ZeroMomentPointGroundReactions::checkGroundContact(
                             .get(iCB)
                             .get_ZeroMomentPointContactPointSet()
                             .get(iCBP);
-            std::string bodyName = contactPoint.get_body_name();
+            std::string bodyName = contactPoint.getParentFrame().getName();
             SimTK::Vec3 pointLoc = contactPoint.get_location();
             double distanceThreshold = contactPoint.get_distance_threshold();
             double velocityThreshold = contactPoint.get_velocity_threshold();
