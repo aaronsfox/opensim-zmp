@@ -166,7 +166,7 @@ void ZeroMomentPointContactBody::addContactPoint(
 distance and velocity parameters */
 void ZeroMomentPointContactBody::addContactPoint(
         const std::string& pointName,
-        const std::string& bodyName,
+        const PhysicalFrame& body,
         const SimTK::Vec3& pointLocation,
         const double& distanceThreshold,
         const double& velocityThreshold) {
@@ -175,7 +175,7 @@ void ZeroMomentPointContactBody::addContactPoint(
     /*ZeroMomentPointContactPoint& cp =
             ZeroMomentPointContactPoint(pointName, bodyName, pointLocation);*/
     ZeroMomentPointContactPoint* cp =
-            new ZeroMomentPointContactPoint(pointName, bodyName, pointLocation);
+            new ZeroMomentPointContactPoint(pointName, body, pointLocation);
 
     // Set the distance threshold
     cp->set_distance_threshold(distanceThreshold);
