@@ -106,7 +106,7 @@ int main() {
 
         // Add the contact point
         contactBodyRight->addContactPoint("contact_point_" + contactName,
-                "calcn_r",
+                osimModel.getBodySet().get("calcn_r"),
                 osimModel.getMarkerSet()
                         .get(contactName + "_ground")
                         .get_location(),
@@ -130,7 +130,7 @@ int main() {
 
         // Add the contact point
         contactBodyLeft->addContactPoint("contact_point_" + contactName,
-                "calcn_l",
+                osimModel.getBodySet().get("calcn_l"),
                 osimModel.getMarkerSet()
                         .get(contactName + "_ground")
                         .get_location(),
@@ -182,7 +182,7 @@ int main() {
 
     // Use the convenience function that takes states and accelerations
     Storage zmpResults =
-            zmpCalculator.calcGroundReactionsFromMotion(states, udot);
+            zmpCalculator.getGroundReactionsFromMotion(states, udot);
 
     // Print result to file
     Storage::printResult(

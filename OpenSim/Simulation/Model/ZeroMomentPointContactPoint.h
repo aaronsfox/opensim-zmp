@@ -20,6 +20,7 @@
  * -------------------------------------------------------------------------- */
 
 #include <OpenSim/Simulation/Model/Station.h>
+#include <OpenSim/Simulation/Model/PhysicalFrame.h>
 
 namespace OpenSim {
 //=============================================================================

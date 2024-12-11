@@ -31,7 +31,7 @@ namespace OpenSim {
  * the contact body to avoid ground penetration in a simulation. The underlying
  * Constraints in Simbody are: PointInPlane to oppose penetration into the
  * ground (unilaterally). This constraint is a much more basic version of the
- * simbody RollingOnSurfaceConstraintm as it removes the torque and slip
+ * simbody RollingOnSurfaceConstraint as it removes the torque and slip
  * constraints.
  *
  * @authors Aaron Fox

@@ -116,7 +116,7 @@ int main() {
 
         // Add the contact point
         contactBodyRight->addContactPoint("contact_point_" + contactName,
-                "calcn_r",
+                osimModel.getBodySet().get("calcn_r"),
                 osimModel.getMarkerSet()
                         .get(contactName + "_ground")
                         .get_location(),
@@ -140,7 +140,7 @@ int main() {
 
         // Add the contact point
         contactBodyLeft->addContactPoint("contact_point_" + contactName,
-                "calcn_l",
+                osimModel.getBodySet().get("calcn_l"),
                 osimModel.getMarkerSet()
                         .get(contactName + "_ground")
                         .get_location(),

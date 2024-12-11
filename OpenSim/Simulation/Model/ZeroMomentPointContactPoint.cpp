@@ -95,7 +95,6 @@ ZeroMomentPointContactPoint::ZeroMomentPointContactPoint(
 void ZeroMomentPointContactPoint::constructProperties() {
 
     setName("contact_point");
-    constructProperty_location(SimTK::Vec3(0,0,0));
     constructProperty_distance_threshold(0.08);
     constructProperty_velocity_threshold(1.5);
 
