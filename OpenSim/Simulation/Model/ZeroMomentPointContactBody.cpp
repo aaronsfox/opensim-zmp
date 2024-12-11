@@ -116,12 +116,12 @@ void ZeroMomentPointContactBody::constructProperties() {
 distance and velocity parameters */
 void ZeroMomentPointContactBody::addContactPoint(
     const std::string& pointName,
-    const std::string& bodyName,
+    const PhysicalFrame& body,
     const SimTK::Vec3& pointLocation) {
 
     // Create the contact point with the specified properties
     ZeroMomentPointContactPoint* cp =
-            new ZeroMomentPointContactPoint(pointName, bodyName, pointLocation);
+            new ZeroMomentPointContactPoint(pointName, body, pointLocation);
 
     // Append to the contact point set
     // upd_ZeroMomentPointContactPointSet().cloneAndAppend(cp);
@@ -138,7 +138,7 @@ void ZeroMomentPointContactBody::addContactPoint(
 distance and default velocity parameter */
 void ZeroMomentPointContactBody::addContactPoint(
         const std::string& pointName,
-        const std::string& bodyName,
+        const PhysicalFrame& body,
         const SimTK::Vec3& pointLocation,
         const double& distanceThreshold) {
 
@@ -146,7 +146,7 @@ void ZeroMomentPointContactBody::addContactPoint(
     /*ZeroMomentPointContactPoint& cp =
             ZeroMomentPointContactPoint(pointName, bodyName, pointLocation);*/
     ZeroMomentPointContactPoint* cp =
-            new ZeroMomentPointContactPoint(pointName, bodyName, pointLocation);
+            new ZeroMomentPointContactPoint(pointName, body, pointLocation);
 
     // Set the distance threshold
     cp->set_distance_threshold(distanceThreshold);

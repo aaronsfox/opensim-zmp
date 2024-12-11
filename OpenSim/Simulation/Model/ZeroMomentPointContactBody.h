@@ -110,13 +110,13 @@ public:
     /** Add a contact point for reviewing ground contact with default
     distance and velocity parameters */
     void addContactPoint(const std::string& pointName,
-        const std::string& bodyName,
+        const PhysicalFrame& body,
         const SimTK::Vec3& pointLocation);
 
     /** Add a contact point for reviewing ground contact with specified
     distance and default velocity parameter */
     void addContactPoint(const std::string& pointName,
-        const std::string& bodyName,
+        const PhysicalFrame& body,
         const SimTK::Vec3& pointLocation,
         const double& distanceThreshold);
 
