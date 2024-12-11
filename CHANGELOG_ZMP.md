@@ -40,3 +40,8 @@ This example uses the `ZeroMomentPointGroundReactions` class with the `ZeroMomen
 - `exampleZmpTrackingSimulation.cpp`: running a Moco tracking problem using the component
 - `exampleZmpPredictiveSimulation.cpp`: running a Moco predictive problem and exporting the GRFs and COP estimated from the component?
 
+
+
+## Bindings
+
+- Added the various `ZeroMomentPoint*` classes to `OpenSimHeaders_simulation.h`
