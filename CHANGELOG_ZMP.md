@@ -5,6 +5,8 @@ The changes to the OpenSim core code associated with the Zero Moment Point appro
 
 ## Classes
 
+**TODO: Class names should be more generic (i.e. ContactBody) so they could be leveraged by other components/classes later on...**
+
 - The `ZeroMomentPointGroundReactions` class was added as a `ModelComponent`. This class serves as a base for most calculations associated with the ZMP estimates of ground reactions.
 - The `ZeroMomentPointContactBodySet` was added as a `ModelComponentSet`. This serves as a convenience class to store `ZeroMomentContactBody` objects within the main `ZeroMomentPointGroundReactions` component.
 - The `ZeroMomentPointContactBody` class was added as a `ModelComponent`. This class sits underneath the `ZeroMomentPointGroundReactions` object within a `ZeroMomentPointContactBodySet` to identify bodies in the model that are expected and checked for ground contact.
@@ -45,3 +47,9 @@ This example uses the `ZeroMomentPointGroundReactions` class with the `ZeroMomen
 ## Bindings
 
 - Added the various `ZeroMomentPoint*` classes to `OpenSimHeaders_simulation.h`
+
+
+
+## Tests
+
+- Added `test_zmp_component.py` to Python bindings test. **TODO: add details on tests in here...**
