@@ -86,6 +86,10 @@
 #include "Model/ModelVisualPreferences.h"
 #include "Model/ExpressionBasedCoordinateForce.h"
 
+#include "Model/ContactPoint.h"
+#include "Model/ContactPointSet.h"
+#include "Model/ZmpGroundReactions.h"
+
 #include "Control/ControlSet.h"
 #include "Control/ControlSetController.h"
 #include "Control/ControlConstant.h"
@@ -113,8 +117,6 @@
 #include "SimbodyEngine/PointOnLineConstraint.h"
 #include "SimbodyEngine/RollingOnSurfaceConstraint.h"
 
-#include "SimbodyEngine/ZeroMomentPointContactPointConstraint.h"
-
 #include "SimbodyEngine/EllipsoidJoint.h"
 #include "SimbodyEngine/BallJoint.h"
 #include "SimbodyEngine/GimbalJoint.h"
@@ -137,13 +139,6 @@
 #include "TableProcessor.h"
 #include "MarkersReference.h"
 #include "PositionMotion.h"
-
-#include "Model/ZeroMomentPointGroundReactions.h"
-#include "Model/ZeroMomentPointContactBody.h"
-#include "Model/ZeroMomentPointContactBodySet.h"
-#include "Model/ZeroMomentPointContactPoint.h"
-#include "Model/ZeroMomentPointContactPointSet.h"
-#include "Model/ZeroMomentPointContactForce.h"
 
 #include <string>
 #include <iostream>
@@ -306,12 +301,9 @@ OSIMSIMULATION_API void RegisterTypes_osimSimulation()
     Object::registerType( TabOpAppendCoupledCoordinateValues() );
     Object::registerType( PositionMotion() );
 	
-	Object::registerType( ZeroMomentPointGroundReactions() );
-	Object::registerType( ZeroMomentPointContactBody() );
-	Object::registerType( ZeroMomentPointContactBodySet() );
-    Object::registerType(ZeroMomentPointContactPoint() );
-	Object::registerType(ZeroMomentPointContactPointSet() );
-	Object::registerType(ZeroMomentPointContactForce() );
+	Object::registerType( ContactPoint() );
+	Object::registerType( ContactPointSet() );
+	Object::registerType( ZmpGroundReactions() );
 
     // OLD Versions
     // Associate an instance with old name to help deserialization.

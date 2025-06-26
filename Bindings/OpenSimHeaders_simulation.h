@@ -135,13 +135,6 @@
 #include <OpenSim/Simulation/Model/FunctionBasedBushingForce.h>
 #include <OpenSim/Simulation/Model/ExpressionBasedBushingForce.h>
 
-#include <OpenSim/Simulation/Model/ZeroMomentPointContactBody.h>
-#include <OpenSim/Simulation/Model/ZeroMomentPointContactBodySet.h>
-#include <OpenSim/Simulation/Model/ZeroMomentPointContactForce.h>
-#include <OpenSim/Simulation/Model/ZeroMomentPointContactPoint.h>
-#include <OpenSim/Simulation/Model/ZeroMomentPointContactPointSet.h>
-#include <OpenSim/Simulation/Model/ZeroMomentPointGroundReactions.h>
-
 #include <OpenSim/Simulation/Solver.h>
 #include <OpenSim/Simulation/AssemblySolver.h>
 #include <OpenSim/Simulation/Reference.h>

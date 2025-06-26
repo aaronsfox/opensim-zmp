@@ -1,5 +1,0 @@
-add_subdirectory(exampleZmpComponentDemo)
-add_subdirectory(exampleZmpGroundReactionsFromMotion)
-add_subdirectory(exampleZmpGroundReactionsFromState)
-add_subdirectory(exampleZmpContactForce)
-add_subdirectory(exampleZmpTrackingSimulation)

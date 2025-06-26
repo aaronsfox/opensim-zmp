@@ -1,0 +1,5 @@
+add_subdirectory(exampleBasicDemo)
+add_subdirectory(exampleContactForce)
+add_subdirectory(exampleGroundReactionsFromMotion)
+add_subdirectory(exampleGroundReactionsFromState)
+add_subdirectory(exampleTrackingSimulation)

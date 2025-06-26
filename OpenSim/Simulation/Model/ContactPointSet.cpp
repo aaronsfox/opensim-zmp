@@ -1,7 +1,5 @@
-#ifndef _opensim_h_
-#define _opensim_h_
 /* -------------------------------------------------------------------------- *
- *                            OpenSim:  OpenSim.h                             *
+ *                          OpenSim:  ContactPointSet.cpp                     *
  * -------------------------------------------------------------------------- *
  * The OpenSim API is a toolkit for musculoskeletal modeling and simulation.  *
  * See http://opensim.stanford.edu and the NOTICE file for more information.  *
@@ -9,8 +7,8 @@
  * National Institutes of Health (U54 GM072970, R24 HD065690) and by DARPA    *
  * through the Warrior Web program.                                           *
  *                                                                            *
- * Copyright (c) 2005-2017 Stanford University and the Authors                *
- * Author(s): Ayman Habib                                                     *
+ * Copyright (c) 2024 Stanford University and the Authors                     *
+ * Author(s): Aaron Fox                                                       *
  *                                                                            *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may    *
  * not use this file except in compliance with the License. You may obtain a  *
@@ -23,24 +21,33 @@
  * limitations under the License.                                             *
  * -------------------------------------------------------------------------- */
 
-#include "Common/osimCommon.h"
-#include "Simulation/osimSimulation.h"
+#include "ContactPointSet.h"
 
-#include "Actuators/osimActuators.h"
-#include "Analyses/osimAnalyses.h"
-#include "Tools/osimTools.h"
+using namespace std;
+using namespace OpenSim;
 
-class osimInstantiator
-{
-public:
-    osimInstantiator() {		
-        RegisterTypes_osimCommon();
-        RegisterTypes_osimSimulation();
-        RegisterTypes_osimActuators();
-        RegisterTypes_osimAnalyses();
-        RegisterTypes_osimTools();
+//=============================================================================
+// UTILITY
+//=============================================================================
+//_____________________________________________________________________________
+/**
+ * Get names of contact points in the set
+ */
+void ContactPointSet::getContactPointNames(Array<string>& contactPointNamesArray) const {
+    contactPointNamesArray.setSize(0);
+    for (int i = 0; i < getSize(); i++)
+    {
+        ContactPoint& nextContactPoint = get(i);
+        contactPointNamesArray.append(nextContactPoint.getName());
     }
-};
+}
 
-static osimInstantiator instantiator;
-#endif // _opensim_h_
+void ContactPointSet::addNamePrefix(const string& prefix)
+{
+    int i;
+
+    // Cycle through set and add prefix
+    for (i = 0; i < getSize(); i++)
+        get(i).setName(prefix + get(i).getName());
+}
+

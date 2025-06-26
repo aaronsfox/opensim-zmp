@@ -1352,6 +1352,7 @@ int Model::getNumMarkers() const
 {
     return get_MarkerSet().getSize();
 }
+
 /**
  * Get the number of ContactGeometry objects in the model.
  *
