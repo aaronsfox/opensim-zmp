@@ -131,35 +131,6 @@ TimeSeriesTable OpenSim::createZMPLoadsFromStates(
         udot.appendRow(speedTimes[i], row);
     }
 
-    //// -----------------------------------------------------------------------
-    //// Option 2: Accelerations derived from values (second derivative of
-    ///values) /
-    ///-----------------------------------------------------------------------
-    //    // Get only the value columns
-    // std::vector<std::string> valueLabels;
-    // for (const auto& label : statesTable.getColumnLabels()) {
-    //    if (label.find("/value") != std::string::npos)
-    //        valueLabels.push_back(label);
-    //}
-    //// Build splines from value columns
-    // GCVSplineSet valueSplines(statesTable, valueLabels, 5, 0.0);
-    //// Build acceleration table from value splines (second derivative)
-    // TimeSeriesTable accFromValues;
-    // accFromValues.setColumnLabels(valueLabels);
-    // std::vector<int> secondDeriv = {0, 0}; // second derivative
-    // for (size_t i = 0; i < times.size(); ++i) {
-    //     SimTK::RowVector row(static_cast<int>(valueLabels.size()));
-    //     SimTK::Vector timeVec(1, times[i]);
-    //     for (int j = 0; j < valueSplines.getSize(); ++j) {
-    //         row[j] = valueSplines[j].calcDerivative(secondDeriv, timeVec);
-    //     }
-    //     accFromValues.appendRow(times[i], row);
-    // }
-    // std::cout << "Accelerations from values rows: "
-    //           << accFromValues.getNumRows() << "\n";
-    // std::cout << "Accelerations from values cols: "
-    //           << accFromValues.getNumColumns() << "\n";
-
     // ------------------------------------------------------------------
     // Build the output table and loop over states.
     // ------------------------------------------------------------------
@@ -191,10 +162,6 @@ TimeSeriesTable OpenSim::createZMPLoadsFromStates(
         SimTK::Vector udotVec(udotRow.size());
         for (int j = 0; j < udotRow.size(); ++j) udotVec[j] = udotRow[j];
         const_cast<ZeroMomentPointEstimator&>(estimator).setUDot(udotVec);
-
-        //// Check udot directly — if all zeros, ID solve has nothing
-        //std::cout << " States udot: " << workingState.getUDot() << "\n";
-        //std::cout << " Created udot: " << udotRow << "\n";
 
         // Build a row of scalar values to fill for current state
         SimTK::RowVector rowData(nColumns, 0.0);
