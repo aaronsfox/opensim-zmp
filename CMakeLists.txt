@@ -8,6 +8,7 @@
 #----------------------------------------------------
 
 cmake_minimum_required(VERSION 3.15)
+
 project(OpenSim)
 
 if(COMMAND cmake_policy)
@@ -199,6 +200,9 @@ option(OPENSIM_BUILD_INDIVIDUAL_APPS
     "Build/install the old command line applications (ik, id, rra, cmc, etc.)."
     ${OPENSIM_BUILD_INDIVIDUAL_APPS_DEFAULT})
 mark_as_advanced(OPENSIM_BUILD_INDIVIDUAL_APPS)
+
+option(BUILD_API_EXAMPLES 
+    "Build the opensim API examples." ON)
 
 
 # Moco settings.
