@@ -91,6 +91,10 @@
 #include "Model/ModelVisualPreferences.h"
 #include "Model/ExpressionBasedCoordinateForce.h"
 
+#include "Model/ContactPoint.h"
+#include "Model/ContactSide.h"
+#include "Model/ZeroMomentPointEstimator.h"
+
 #include "Control/ControlSet.h"
 #include "Control/ControlSetController.h"
 #include "Control/ControlConstant.h"
@@ -315,6 +319,10 @@ OSIMSIMULATION_API void RegisterTypes_osimSimulation()
     Object::registerType( TabOpUseAbsoluteStateNames() );
     Object::registerType( TabOpAppendCoupledCoordinateValues() );
     Object::registerType( PositionMotion() );
+	
+	Object::registerType( ContactPoint() );
+	Object::registerType( ContactSide() );
+	Object::registerType( ZeroMomentPointEstimator() );
 
     // OLD Versions
     // Associate an instance with old name to help deserialization.

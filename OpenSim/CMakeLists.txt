@@ -9,7 +9,9 @@ add_subdirectory(Moco)
 if (BUILD_API_EXAMPLES)
   add_subdirectory(Examples)
 endif()
-add_subdirectory(Tests)
+if (BUILD_TESTING)
+	add_subdirectory(Tests)
+endif()
 
 #add_subdirectory(Sandbox)
 

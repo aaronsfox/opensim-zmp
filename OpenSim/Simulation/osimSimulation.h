@@ -83,6 +83,10 @@
 #include "Model/PhysicalOffsetFrame.h"
 #include "Model/Ground.h"
 
+#include "Model/ContactPoint.h"
+#include "Model/ContactSide.h"
+#include "Model/ZeroMomentPointEstimator.h"
+
 #include "Manager/Manager.h"
 
 #include "Control/ControlSet.h"
@@ -139,6 +143,8 @@
 #include "OpenSense/OpenSenseUtilities.h"
 #include "OpenSense/IMU.h"
 #include "SimulationUtilities.h"
+
+#include "ZeroMomentPointUtilities.h"
 
 #include "RegisterTypes_osimSimulation.h"   // to expose RegisterTypes_osimSimulation
 
