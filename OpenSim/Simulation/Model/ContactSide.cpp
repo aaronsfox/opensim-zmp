@@ -72,11 +72,21 @@ const ContactPoint& ContactSide::getContactPoint(
                                             getName() + "'.");
 }
 
+//=========================================================================
+// METHODS
+//=========================================================================
+
+/** Convenience for setting contact body name. */
+void ContactSide::setContactBodyName(const std::string& contactBodyName) {
+    set_contact_body_name(contactBodyName);
+}
+
 //============================================================================//
 // MODELCOMPONENT INTERFACE
 //============================================================================//
 
 void ContactSide::extendFinalizeFromProperties() {
+    
     Super::extendFinalizeFromProperties();
 
     OPENSIM_THROW_IF_FRMOBJ(getNumContactPoints() == 0, Exception,

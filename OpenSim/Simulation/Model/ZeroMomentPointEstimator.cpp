@@ -7,6 +7,8 @@
 #include <OpenSim/Simulation/Model/Model.h>
 #include <OpenSim/Simulation/Model/ModelComponent.h>
 
+#include <simbody/internal/Body.h>
+
 #include <cmath>
 #include <sstream>
 
@@ -106,7 +108,7 @@ void ZeroMomentPointEstimator::setContactForceThreshold(
 /** Set the generalised accelerations (udot) to use in the ID solve.
  *  Call this before evaluating outputs when using kinematically-derived
  *  accelerations rather than the state's forward-dynamics udot. */
-void ZeroMomentPointEstimator::setUDot(const SimTK::Vector& udot) {
+void ZeroMomentPointEstimator::setUDot(const SimTK::Vector& udot) const {
     _externalUDot.reset(new SimTK::Vector(udot));
 }
 
@@ -133,6 +135,8 @@ void ZeroMomentPointEstimator::extendFinalizeFromProperties() {
     // Throw an exception if the contact force threshold is negative
     OPENSIM_THROW_IF_FRMOBJ(get_contact_force_threshold() < 0.0, Exception,
         "contact_force_threshold must be non-negative.");
+		
+	// TODO: check if free joint provided is in model...
 
     // Register one list-output channel per side, keyed by side_name.
     for (int i = 0; i < getNumContactSides(); ++i) {
@@ -163,9 +167,6 @@ void ZeroMomentPointEstimator::extendAddToSystem(
     // Computing ZMP requires inverse dynamics residual extraction
     // (accelerations), so we place the invalidation stage at
     // SimTK::Stage::Acceleration.
-    //ZMPResult empty;
-    //empty.sides.resize(getNumContactSides(), SideResult{});
-    // Stage::Acceleration: the ID solve needs udot.
     _zmpResultCV = addCacheVariable(
         "zmp_result", ZMPResult(), SimTK::Stage::Acceleration);
 }
@@ -261,7 +262,7 @@ const ZMPResult& ZeroMomentPointEstimator::getZMPResult(
 
     // Commit the new result back to the state cache system and mark as valid
     setCacheVariableValue(s, _zmpResultCV, freshResult);
-    markCacheVariableValid(s, _zmpResultCV); // ← add this line
+    markCacheVariableValid(s, _zmpResultCV);
 
     // Return the safely cached reference
     return getCacheVariableValue<ZMPResult>(s, _zmpResultCV);
@@ -316,8 +317,10 @@ ZMPResult ZeroMomentPointEstimator::computeZMPResult(const SimTK::State& s) cons
     ZMPResult result;
     result.sides.resize(n, SideResult{});
 
-    // Get model and realize states
+    // Get model
     const auto& model = getModel();
+
+    // Realize states
     model.realizeAcceleration(s);
 
     // ------------------------------------------------------------------
@@ -381,8 +384,9 @@ ZMPResult ZeroMomentPointEstimator::computeZMPResult(const SimTK::State& s) cons
     // Check if vertical force exceeds contact force threshold
     // Assumes vertical force is in the y-axis
     const double Fvert = netForce[1];
-    if (Fvert < fThr)
-        return result;   // all outputs zeroed / invalid
+    if (Fvert < fThr) {
+        return result; // all outputs zeroed / invalid
+    }
 
     // ------------------------------------------------------------------
     // Compute the ZMP to get the CoP on the ground plane
@@ -392,6 +396,7 @@ ZMPResult ZeroMomentPointEstimator::computeZMPResult(const SimTK::State& s) cons
     // This is based on getting the child frame of the free joint
     // and hence assumes that the ground should always be the
     // parent.
+    // 
     // Getting the frames position in the ground should represent
     // it's translational coordinates, as it appears robust to frame
     // translation in the model. The frames origin (i.e. 0,0,0)
@@ -421,10 +426,8 @@ ZMPResult ZeroMomentPointEstimator::computeZMPResult(const SimTK::State& s) cons
             -groundM.get(0) / netForce.get(1));
 
     // Calculate the resultant active moment at ZMP along the y-axis
-    // TODO: This formula still doesn't seem quite right?
-    double myZMP = groundM.get(1) + 
-        (netForce.get(0) * zmpCOP.get(2)) - 
-        (netForce.get(2) * zmpCOP.get(1));
+    double myZMP = groundM.get(1) - (zmpCOP.get(2) * netForce.get(0) -
+        zmpCOP.get(0) * netForce.get(2));
 
     // ------------------------------------------------------------------
     // Dispatch results to unilateral or bilateral mode calculations

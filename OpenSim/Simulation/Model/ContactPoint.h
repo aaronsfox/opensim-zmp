@@ -1,5 +1,6 @@
 #ifndef OPENSIM_CONTACT_POINT_H
 #define OPENSIM_CONTACT_POINT_H
+
 /* -------------------------------------------------------------------------- *
  *                          OpenSim: ContactPoint.h                           *
  * -------------------------------------------------------------------------- *
@@ -91,6 +92,9 @@ public:
     ContactPoint(const std::string& pointName,
                  const PhysicalFrame& parentFrame,
                  const SimTK::Vec3& location);
+
+    // Copy constructor
+    ContactPoint(const ContactPoint& other) = default;
 
     //=========================================================================
     // OUTPUT EVALUATION METHODS

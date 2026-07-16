@@ -21,7 +21,6 @@
 #include <string>
 
 using namespace OpenSim;
-using namespace SimTK;
 
 // Helper: print a section header to console
 static void printSection(const std::string& title) {

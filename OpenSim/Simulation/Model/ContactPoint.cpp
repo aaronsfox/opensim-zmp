@@ -30,8 +30,7 @@ ContactPoint::ContactPoint() : Station() {
  * Convenience constructor specifying name, body name and location.
  */
 ContactPoint::ContactPoint(const std::string& pointName,
-	const PhysicalFrame& parentFrame, const SimTK::Vec3& location)
-        : Station() {
+	const PhysicalFrame& parentFrame, const SimTK::Vec3& location) {
     constructProperties();
     setName(pointName);
     set_location(location);
@@ -39,7 +38,6 @@ ContactPoint::ContactPoint(const std::string& pointName,
     // which requires the component to already be in the tree
     updSocket<PhysicalFrame>("parent_frame")
             .setConnecteePath(parentFrame.getAbsolutePathString());
-
 
 }
 
@@ -108,14 +106,33 @@ bool ContactPoint::isInContact(const SimTK::State& s) const {
     if (getContactCheckingMethod() == "velocity") {
 		
 		// Calculate if point is in contact using the distance and velocity method
+		// This implements the method by Karcnik, checking against both a distance
+		// threshold relative to the ground and the absolute velocity of the point
+		// against a velocity threshold
+		
 		// Start by getting the distance and velocity threshold
 		double distanceThreshold = get_distance_threshold();
         double velocityThreshold = get_velocity_threshold();
 		
-		std::cout << "TODO: distance and velocity contact checking method not done yet...sorry..."
-		          << std::endl;
-				  
-	} else {
+		// Get the distance and velocity values
+        SimTK::Vec3 pointLoc = getLocationInGround(s);
+        SimTK::Vec3 pointVel = getVelocityInGround(s);
+
+		// Check against distance and velocity threshold
+        if (pointLoc[1] < distanceThreshold &&
+                pointVel.norm() < velocityThreshold) {
+
+            // Specify that the point is in contact with the ground
+            inContact = true;
+        
+		} else {
+
+			// Specify that the point is not in contact
+            inContact = false;
+
+		}
+						  
+	} else { // distance only method
 		
 		// Calculate if point is in contact using the distance method
 		// Start by getting the distance threshold

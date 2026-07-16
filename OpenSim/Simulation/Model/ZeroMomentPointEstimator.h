@@ -89,7 +89,7 @@ struct ZMPResult {
  * - `GRF`          : Vec3  @ Acceleration — ground reaction force (N)
  * - `CoP`          : Vec3  @ Acceleration — centre of pressure / ZMP (m)
  * - `free_moment`  : Vec3  @ Acceleration — residual free moment at CoP (Nm)
- * - `is_in_contact`: bool  @ Position     — any contact point active
+ * - `is_in_contact`: bool  @ Acceleration     — any contact point active
  * - `is_valid`     : bool  @ Acceleration — in contact AND Fvert > threshold
  *
  * ### Scalar Outputs
@@ -98,6 +98,7 @@ struct ZMPResult {
  *
  * @author  Aaron Fox
  */
+
 class OSIMSIMULATION_API ZeroMomentPointEstimator : public ModelComponent {
     OpenSim_DECLARE_CONCRETE_OBJECT(ZeroMomentPointEstimator, ModelComponent);
 
@@ -160,7 +161,8 @@ public:
     ZeroMomentPointEstimator(const std::string& freeJointName,
         const double& contactForceThreshold);
 
-    virtual ~ZeroMomentPointEstimator() = default;
+    // Copy constructor
+    ZeroMomentPointEstimator(const ZeroMomentPointEstimator&) = default;
 
     //=========================================================================
     // CONTACT SIDE MANAGEMENT
@@ -197,7 +199,13 @@ public:
     /** Set the generalised accelerations (udot) to use in the ID solve.
      *  Call this before evaluating outputs when using kinematically-derived
      *  accelerations rather than the state's forward-dynamics udot. */
-    void setUDot(const SimTK::Vector& udot);
+    void setUDot(const SimTK::Vector& udot) const;
+
+    /** Gateway caching method for getting ZMP result */
+    const ZMPResult& getZMPResult(const SimTK::State& s) const;
+
+    /** Returns the side index for an output channel name. Throws if absent. */
+    int getSideIndex(const std::string& channelName) const;
 
     //=========================================================================
     // OUTPUT EVALUATION METHODS
@@ -232,32 +240,10 @@ protected:
     void extendAddToSystem(SimTK::MultibodySystem&)  const override;
 
 private:
-    ////=========================================================================
-    //// INTERNAL RESULT STRUCT
-    ////=========================================================================
-    //struct SideResult {
-    //    SimTK::Vec3 grf{0.0};
-    //    SimTK::Vec3 cop{0.0};
-    //    SimTK::Vec3 freeMoment{0.0};
-    //    bool        isInContact{false};
-    //    bool        isValid{false};
-    //};
-
-    ///** Top-level result stored in the cache variable. */
-    //struct ZMPResult {
-    //    SimTK::Array_<SideResult> sides;  ///< parallel to contact_sides list
-    //    ContactMode               mode{ContactMode::None};
-    //};
 
     //=========================================================================
     // COMPUTATION
     //=========================================================================
-
-    /** Returns the side index for an output channel name. Throws if absent. */
-    int getSideIndex(const std::string& channelName) const;
-
-    // Gateway caching method for getting ZMP result
-    const ZMPResult& getZMPResult(const SimTK::State& s) const;
 
     ///** Ensures the cache is valid for the current state. */
     //void ensureResultsValid(const SimTK::State& s) const;
@@ -265,6 +251,7 @@ private:
     /** Full ZMP pipeline — called only when cache is stale. */
     ZMPResult computeZMPResult(const SimTK::State& s) const;
 
+    // TODO: resolve idea around bilateral contact cases...
     /**
      * Bilateral case: both sides in contact.
      *
@@ -300,7 +287,7 @@ private:
         _idSolver;
 
     // Typed cache variable — avoids per-output string lookup.
-    mutable CacheVariable<ZMPResult> _zmpResultCV;
+    mutable SimTK::ResetOnCopy<CacheVariable<ZMPResult>> _zmpResultCV;
 
     // Externally provided udot — used instead of s.getUDot() when set
     mutable SimTK::ResetOnCopy<std::unique_ptr<SimTK::Vector>> _externalUDot;

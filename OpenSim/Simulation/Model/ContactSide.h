@@ -11,7 +11,6 @@
  * contact.                                                                   *
  * -------------------------------------------------------------------------- */
 
-//#include <OpenSim/Simulation/Model/ContactPointSet.h>
 #include <OpenSim/Simulation/Model/ContactPoint.h>
 #include <OpenSim/Simulation/Model/ModelComponent.h>
 #include <OpenSim/Simulation/Model/PhysicalFrame.h>
@@ -40,6 +39,7 @@ namespace OpenSim {
  *
  * @author  Aaron Fox
  */
+
 class OSIMSIMULATION_API ContactSide : public ModelComponent {
     OpenSim_DECLARE_CONCRETE_OBJECT(ContactSide, ModelComponent);
 
@@ -55,14 +55,6 @@ public:
 
     OpenSim_DECLARE_LIST_PROPERTY(contact_points, ContactPoint,
         "Set of contact detection points belonging to this side.");
-
-    //=========================================================================
-    // SOCKETS
-    //=========================================================================
-	
-    //OpenSim_DECLARE_SOCKET(contact_body, PhysicalFrame,
-    //    "PhysicalFrame to which the ZMP-derived ground reaction force for "
-    //    "this side is applied (e.g. /bodyset/calcn_r).");
 
     //=========================================================================
     // OUTPUTS
@@ -84,17 +76,12 @@ public:
     ContactSide(const std::string&   name,
                 const std::string& contactBodyName);
 
-    virtual ~ContactSide() = default;
+    // Copy constructor
+    ContactSide(const ContactSide& other) = default;
 
     //=========================================================================
     // CONTACT POINT ACCESS
     //=========================================================================
-
-    ///** Returns the ContactPointSet owned by this side. */
-    //const ContactPointSet& getContactPointSet() const;
-
-    ///** Returns a writable reference to the ContactPointSet. */
-    //ContactPointSet& updContactPointSet();
 
     /** Add a contact point for reviewing ground contact */
     int addContactPoint(ContactPoint* point);
@@ -107,6 +94,13 @@ public:
 
     /** Returns a const reference to the ContactPoint with the given name. */
     const ContactPoint& getContactPoint(const std::string& pointName) const;
+
+    //=========================================================================
+    // METHODS
+    //=========================================================================
+
+    /** Convenience for setting contact body name. */
+    void setContactBodyName(const std::string& contactBodyName);
 
     //=========================================================================
     // OUTPUT EVALUATION

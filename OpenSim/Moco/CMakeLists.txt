@@ -110,6 +110,10 @@ set(MOCO_SOURCES
         MocoOutputBoundConstraint.h
         MocoStateBoundConstraint.cpp
         MocoStateBoundConstraint.h
+		MocoContactPointConstraint.cpp
+        MocoContactPointConstraint.h
+		MocoZeroMomentPointConstraint.cpp
+        MocoZeroMomentPointConstraint.h
         )
 if(OPENSIM_WITH_CASADI)
     list(APPEND MOCO_SOURCES

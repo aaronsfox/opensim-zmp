@@ -32,6 +32,8 @@
 #include "SpringGeneralizedForce.h"
 #include "ClutchedPathSpring.h"
 
+#include "BodyWrenchActuator.h"
+
 #include "Schutte1993Muscle_Deprecated.h"
 #include "Delp1990Muscle_Deprecated.h"
 #include "Thelen2003Muscle_Deprecated.h"

@@ -95,7 +95,7 @@ TimeSeriesTable OpenSim::createZMPLoadsFromStates(
     // to inverse dynamics are generated based on the provided states.
 
     // -----------------------------------------------------------------------
-    // Option 1: Accelerations derived from speeds (first derivative of speeds)
+    // Accelerations derived from speeds (first derivative of speeds)
     // -----------------------------------------------------------------------
     
     // Get only the speed columns from the states table and create udot labels
