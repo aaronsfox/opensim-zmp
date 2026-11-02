@@ -32,9 +32,11 @@ OpenSimAddTest(NAME testMocoConstraints
         DISABLED ${MOCO_CASADI_TESTS_DISABLED}
         ENVIRONMENT "OPENSIM_MOCO_PARALLEL=0")
 
-# Evaluates the constraint without a solver, so it does not need CasADi.
+# Most cases evaluate the constraint without a solver; the case tagged
+# [casadi] needs MocoCasADiSolver.
 OpenSimAddTest(NAME testMocoContactPointConstraint
-        LINKLIBS osimMoco)
+        LINKLIBS osimMoco
+        ENVIRONMENT "OPENSIM_MOCO_PARALLEL=0")
 
 OpenSimAddTest(NAME testMocoContact
         LINKLIBS osimMoco

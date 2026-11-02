@@ -21,16 +21,23 @@
  * limitations under the License.                                             *
  * -------------------------------------------------------------------------- */
 
-// These tests evaluate the constraint through MocoProblemRep, so they do not
-// need a solver.
+// Most tests evaluate the constraint through MocoProblemRep, so they do not
+// need a solver. The "[casadi]" test solves a problem with MocoCasADiSolver
+// and is only compiled when OpenSim is built with CasADi.
 
+#include <algorithm>
 #include <catch2/catch_all.hpp>
 #include <string>
 #include <vector>
 
+#include <OpenSim/Actuators/CoordinateActuator.h>
+#include <OpenSim/Moco/MocoCasADiSolver/MocoCasADiSolver.h>
 #include <OpenSim/Moco/MocoContactPointConstraint.h>
+#include <OpenSim/Moco/MocoGoal/MocoControlGoal.h>
+#include <OpenSim/Moco/MocoGoal/MocoStateTrackingGoal.h>
 #include <OpenSim/Moco/MocoProblem.h>
 #include <OpenSim/Moco/MocoProblemRep.h>
+#include <OpenSim/Moco/MocoStudy.h>
 #include <OpenSim/Simulation/Model/ContactPoint.h>
 #include <OpenSim/Simulation/Model/ContactSide.h>
 #include <OpenSim/Simulation/Model/Model.h>
@@ -245,3 +252,72 @@ TEST_CASE("MocoContactPointConstraint serialization") {
     REQUIRE(loaded != nullptr);
     CHECK(loaded->getPenetrationTolerance() == 0.002);
 }
+
+#ifdef OPENSIM_WITH_CASADI
+TEST_CASE("MocoContactPointConstraint in a solve", "[casadi]") {
+    // A planar foot (no gravity, no contact force) is driven by reserve
+    // actuators from 5 cm above the ground to a final height 5 cm below it.
+    // With the constraint, the solver must stop the sole at the ground.
+    Model model = createTwoFootModel();
+    model.setGravity(Vec3(0));
+    for (const std::string side : {"right", "left"}) {
+        for (const std::string coord : {"rz", "tx", "ty"}) {
+            auto* actuator = new CoordinateActuator(side + "_" + coord);
+            actuator->setName(side + "_" + coord + "_actuator");
+            actuator->setOptimalForce(10);
+            model.addForce(actuator);
+        }
+    }
+    model.finalizeConnections();
+
+    MocoStudy study;
+    MocoProblem& problem = study.updProblem();
+    problem.setModelAsCopy(model);
+    problem.setTimeBounds(0, 1);
+    const std::string right = "/jointset/ground_right/right_";
+    const std::string left = "/jointset/ground_left/left_";
+    problem.setStateInfo(right + "ty/value", {-0.5, 0.5}, halfHeight + 0.05);
+    problem.setStateInfo(left + "ty/value", {-0.5, 0.5}, 0.5);
+    for (const std::string coord : {"rz", "tx"}) {
+        problem.setStateInfo(right + coord + "/value", {-1, 1}, 0);
+        problem.setStateInfo(left + coord + "/value", {-1, 1}, 0);
+    }
+    for (const std::string coord : {"rz", "tx", "ty"}) {
+        problem.setStateInfo(right + coord + "/speed", {-5, 5}, 0, 0);
+        problem.setStateInfo(left + coord + "/speed", {-5, 5}, 0, 0);
+    }
+    problem.setControlInfoPattern(".*", {-1, 1});
+
+    // Pull the right foot toward a final height below the ground.
+    auto* goal = problem.addGoal<MocoStateTrackingGoal>("track", 10.0);
+    TimeSeriesTable reference;
+    reference.setColumnLabels({right + "ty/value"});
+    reference.addTableMetaData("inDegrees", std::string("no"));
+    // GCVSpline (used for the reference) needs at least 6 rows.
+    for (int i = 0; i <= 10; ++i) {
+        reference.appendRow(0.1 * i, SimTK::RowVector(1, halfHeight - 0.05));
+    }
+    goal->setReference(TableProcessor(reference));
+    goal->setAllowUnusedReferences(true);
+    problem.addGoal<MocoControlGoal>("effort", 0.01);
+
+    auto* constraint = problem.addPathConstraint<MocoContactPointConstraint>();
+    constraint->setName("no_penetration");
+    constraint->addContactSidePath("/zmp/right");
+
+    auto& solver = study.initCasADiSolver();
+    solver.set_num_mesh_intervals(20);
+    solver.set_enforce_path_constraint_mesh_interior_points(true);
+    MocoSolution solution = study.solve();
+    REQUIRE(solution.success());
+
+    // The sole height is ty - halfHeight; it reaches the ground but no lower.
+    const auto heights = solution.getState(right + "ty/value");
+    double lowest = SimTK::Infinity;
+    for (int i = 0; i < heights.size(); ++i) {
+        lowest = std::min(lowest, heights[i] - halfHeight);
+    }
+    CHECK(lowest >= -1e-6);
+    CHECK_THAT(lowest, WithinAbs(0, 1e-3));
+}
+#endif // OPENSIM_WITH_CASADI

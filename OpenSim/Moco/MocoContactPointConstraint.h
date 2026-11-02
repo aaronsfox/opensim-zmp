@@ -79,8 +79,9 @@ right->addContactSidePath("/zmp_estimator/right");
   `penetration_tolerance` (e.g., 0.005 m) and then re-solve with 0 from that
   solution.
 - **Enforce the constraint between mesh points.** Path constraints are
-  enforced at mesh points; with Hermite-Simpson transcription, also set
-  `enforce_path_constraint_midpoints` to true in MocoCasADiSolver.
+  enforced at mesh points; with Hermite-Simpson or Legendre-Gauss
+  transcription, also set `enforce_path_constraint_mesh_interior_points` to
+  true in MocoCasADiSolver.
 @ingroup mocopathcon */
 class OSIMMOCO_API MocoContactPointConstraint : public MocoPathConstraint {
     OpenSim_DECLARE_CONCRETE_OBJECT(
