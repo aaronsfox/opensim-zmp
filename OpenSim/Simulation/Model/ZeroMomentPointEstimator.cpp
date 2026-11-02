@@ -214,7 +214,6 @@ void ZeroMomentPointEstimator::extendConnectToModel(Model& model) {
 
     _freeJoint.reset(&joint);
     _idSolver.reset(new InverseDynamicsSolver(model));
-    _bilateralWarningIssued = false;
 }
 
 void ZeroMomentPointEstimator::extendAddToSystem(
@@ -330,18 +329,8 @@ ZeroMomentPointEstimator::ZMPResult ZeroMomentPointEstimator::calcZMPResult(
 
     // TODO: split the GRF between sides in double support. Until a bilateral
     // method is implemented, outputs remain zero and not valid.
-    if (result.mode == ContactMode::Bilateral) {
-        if (!_bilateralWarningIssued) {
-            log_warn("ZeroMomentPointEstimator '{}': both contact sides are "
-                     "in contact (double support). Splitting the ground "
-                     "reaction between sides is not yet implemented, so "
-                     "outputs are zero and not valid while both sides are in "
-                     "contact. This warning is shown once.",
-                    getName());
-            _bilateralWarningIssued = true;
-        }
-        return result;
-    }
+    // createZMPLoadsFromStates() reports these periods to the user.
+    if (result.mode == ContactMode::Bilateral) return result;
 
     // Whole-body external wrench: inverse dynamics with gravity as the only
     // applied force, so that the model's own forces (muscles, actuators,

@@ -66,7 +66,7 @@ Ground contact is detected with ContactSide / ContactPoint subcomponents.
   are assigned to that side, and its CoP is the ZMP.
 - **Both sides in contact (bilateral):** the split between sides is
   statically indeterminate and is not yet implemented. Outputs are zero and
-  not valid, and a warning is logged once.
+  not valid (createZMPLoadsFromStates() reports these periods).
   TODO: add a bilateral method (e.g., the linear distance split of Xiang et
   al. 2009, eq. 22, or the approach of Dijkstra & Gutierrez-Farewik 2015).
 
@@ -303,7 +303,6 @@ private:
             _idSolver;
     SimTK::ReferencePtr<const Joint> _freeJoint;
     mutable CacheVariable<ZMPResult> _zmpResultCV;
-    mutable bool _bilateralWarningIssued = false;
 };
 
 } // namespace OpenSim
