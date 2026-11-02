@@ -160,6 +160,9 @@ OpenSim::ModelComponentSet<OpenSim::Controller>;
 // need to include them after Station.
 %include <OpenSim/Simulation/Model/MeyerFregly2016Force.h>
 %include <OpenSim/Simulation/Model/ExponentialContactForce.h>
+%include <OpenSim/Simulation/Model/ContactPoint.h>
+%include <OpenSim/Simulation/Model/ContactSide.h>
+%include <OpenSim/Simulation/Model/ZeroMomentPointEstimator.h>
 
 // WrapObject is included up above.
 %include <OpenSim/Simulation/Wrap/WrapSphere.h>

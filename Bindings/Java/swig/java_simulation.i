@@ -221,6 +221,24 @@ using namespace SimTK;
   }
 %}
 
+%javamethodmodifiers OpenSim::ZeroMomentPointEstimator::adoptContactSide "private";
+%rename OpenSim::ZeroMomentPointEstimator::adoptContactSide private_adoptContactSide;
+%typemap(javacode) OpenSim::ZeroMomentPointEstimator %{
+  public int adoptContactSide(ContactSide side) {
+      side.markAdopted();
+      return private_adoptContactSide(side);
+  }
+%}
+
+%javamethodmodifiers OpenSim::ContactSide::adoptContactPoint "private";
+%rename OpenSim::ContactSide::adoptContactPoint private_adoptContactPoint;
+%typemap(javacode) OpenSim::ContactSide %{
+  public int adoptContactPoint(ContactPoint point) {
+      point.markAdopted();
+      return private_adoptContactPoint(point);
+  }
+%}
+
 %extend OpenSim::Manager {
     void setIntegratorMethod(int method) {
         self->setIntegratorMethod(static_cast<Manager::IntegratorMethod>(method));

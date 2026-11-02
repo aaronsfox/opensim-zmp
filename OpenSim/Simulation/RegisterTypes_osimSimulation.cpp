@@ -49,6 +49,9 @@
 #include "Model/CoordinateSet.h"
 #include "Model/ElasticFoundationForce.h"
 #include "Model/ExponentialContactForce.h"
+#include "Model/ContactPoint.h"
+#include "Model/ContactSide.h"
+#include "Model/ZeroMomentPointEstimator.h"
 #include "Model/ExponentialCoordinateLimitForce.h"
 #include "Model/HuntCrossleyForce.h"
 #include "Model/SmoothSphereHalfSpaceForce.h"
@@ -262,6 +265,9 @@ OSIMSIMULATION_API void RegisterTypes_osimSimulation()
     Object::registerType( CoordinateLinearStopForce() );
     Object::registerType( SmoothSphereHalfSpaceForce() );
     Object::registerType( ExponentialContactForce() );
+    Object::registerType( ContactPoint() );
+    Object::registerType( ContactSide() );
+    Object::registerType( ZeroMomentPointEstimator() );
     Object::registerType( MeyerFregly2016Force() );
     Object::registerType( ExponentialCoordinateLimitForce() );
     Object::registerType( HuntCrossleyForce() );

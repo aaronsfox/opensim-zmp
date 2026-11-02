@@ -96,6 +96,14 @@ MODEL_ADOPT_HELPER(Controller);
 %pythonappend OpenSim::PathPointSet::insert %{
     aObject._markAdopted()
 %}
+
+// ZeroMomentPointEstimator and ContactSide take ownership of passed in objects
+%pythonappend OpenSim::ZeroMomentPointEstimator::adoptContactSide %{
+    side._markAdopted()
+%}
+%pythonappend OpenSim::ContactSide::adoptContactPoint %{
+    point._markAdopted()
+%}
 // Typemaps
 // ========
 // None.

@@ -27,7 +27,10 @@
 #include <OpenSim/Analyses/osimAnalyses.h>
 #include <OpenSim/Simulation/Model/FunctionBasedPath.h>
 #include <OpenSim/Simulation/Model/StationDefinedFrame.h>
+#include <OpenSim/Simulation/Model/ContactPoint.h>
+#include <OpenSim/Simulation/Model/ContactSide.h>
 #include <OpenSim/Simulation/Model/ExponentialContactForce.h>
+#include <OpenSim/Simulation/Model/ZeroMomentPointEstimator.h>
 #include <OpenSim/Tools/InverseKinematicsTool.h>
 
 #include <tests/Testing.h>
@@ -138,6 +141,13 @@ TEST_CASE("Serialize OpenSim objects") {
         } else if (dynamic_cast<ExponentialContactForce*>(clone)) {
             // Randomizing ExponentialContactForce sporadically fails
             // with exception message "failed to match original model".
+            continue;
+        } else if (dynamic_cast<ZeroMomentPointEstimator*>(clone) ||
+                   dynamic_cast<ContactSide*>(clone) ||
+                   dynamic_cast<ContactPoint*>(clone)) {
+            // These require ContactSides, ContactPoints and connected frames
+            // that randomized properties cannot provide; they are serialized
+            // in testZeroMomentPointEstimator.
             continue;
         } else {
             randClone = OpenSim::Testing::randomize(clone);
