@@ -281,6 +281,7 @@ OpenSim::ModelComponentSet<OpenSim::Controller>;
 %include <OpenSim/Simulation/VisualizerUtilities.h>
 
 %include <OpenSim/Simulation/TableProcessor.h>
+%include <OpenSim/Simulation/ZeroMomentPointUtilities.h>
 
 // Iterators.
 %template(FrameList) OpenSim::ComponentList<const OpenSim::Frame>;

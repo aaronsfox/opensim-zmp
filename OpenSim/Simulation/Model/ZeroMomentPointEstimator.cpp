@@ -288,14 +288,24 @@ ZeroMomentPointEstimator::getZMPResult(const SimTK::State& state) const {
                             "Stage::Acceleration, but it is realized to "
                             "Stage::{}.",
                         std::string(state.getSystemStage().getName())));
-        setCacheVariableValue(state, _zmpResultCV, calcZMPResult(state));
+        setCacheVariableValue(
+                state, _zmpResultCV, calcZMPResult(state, state.getUDot()));
         markCacheVariableValid(state, _zmpResultCV);
     }
     return getCacheVariableValue(state, _zmpResultCV);
 }
 
 ZeroMomentPointEstimator::ZMPResult ZeroMomentPointEstimator::calcZMPResult(
-        const SimTK::State& state) const {
+        const SimTK::State& state, const SimTK::Vector& udot) const {
+    OPENSIM_THROW_IF_FRMOBJ(state.getSystemStage() < SimTK::Stage::Velocity,
+            Exception,
+            std::format("Expected the system to be realized to "
+                        "Stage::Velocity, but it is realized to Stage::{}.",
+                    std::string(state.getSystemStage().getName())));
+    OPENSIM_THROW_IF_FRMOBJ(udot.size() != state.getNU(), Exception,
+            std::format("Expected udot to have {} elements, but it has {}.",
+                    state.getNU(), udot.size()));
+
     const int n = getNumContactSides();
     ZMPResult result;
     result.sides.resize(n, SideResult{});
@@ -338,8 +348,8 @@ ZeroMomentPointEstimator::ZMPResult ZeroMomentPointEstimator::calcZMPResult(
     // contact elements, ExternalLoads) do not cancel the residual.
     const Model& model = getModel();
     const SimTK::Vector noMobilityForces(state.getNU(), 0.0);
-    const SimTK::Vector tau = _idSolver->solve(state, state.getUDot(),
-            noMobilityForces, model.getGravityBodyForces(state));
+    const SimTK::Vector tau = _idSolver->solve(
+            state, udot, noMobilityForces, model.getGravityBodyForces(state));
 
     // Equivalent spatial force on the root body at the joint's child frame
     // origin, expressed in Ground: [moment, force].

@@ -90,6 +90,10 @@ SimTK::Vec3 grf = estimator.getGroundReactionForce(state, "right");
 @endcode
 Equivalently, record the `ground_reaction_force`, `center_of_pressure` and
 `free_moment` outputs with a TableReporter while stepping through time.
+createZMPLoadsFromKinematics() does this for a table of coordinate values.
+When the accelerations come from data instead (e.g., a states table with
+accelerations), pass them to calcZMPResult(), or use
+createZMPLoadsFromStates().
 Filter the coordinates before creating the PositionMotion, since accelerations
 amplify noise. In a forward simulation without prescribed motion, the
 accelerations are those produced by the model's forces, so the estimate
@@ -256,13 +260,8 @@ public:
     int getContactModeAsInt(const SimTK::State& state) const;
     // @}
 
-protected:
-    void extendFinalizeFromProperties() override;
-    void extendConnectToModel(Model& model) override;
-    void extendAddToSystem(SimTK::MultibodySystem& system) const override;
-
-private:
-    // Result for one ContactSide.
+#ifndef SWIG
+    /** Result for one ContactSide. */
     struct SideResult {
         SimTK::Vec3 groundReactionForce{0.0};
         SimTK::Vec3 centerOfPressure{0.0};
@@ -271,17 +270,33 @@ private:
         bool isValid{false};
     };
 
-    // Result for all ContactSides; stored in the state cache.
+    /** Result for all ContactSides. */
     struct ZMPResult {
-        SimTK::Array_<SideResult> sides; // Parallel to contact_sides.
+        SimTK::Array_<SideResult> sides; ///< Parallel to contact_sides.
         ContactMode mode{ContactMode::NoContact};
     };
 
+    /** Compute the result for all sides using the generalized accelerations
+    `udot` (in the system's mobility order, size state.getNU()) instead of
+    the accelerations in the state. The result is not cached. Use this when
+    the accelerations come from data rather than from the model's dynamics or
+    a PositionMotion (see createZMPLoadsFromStates()). The system must be
+    realized to SimTK::Stage::Velocity. Not available through scripting. */
+    ZMPResult calcZMPResult(
+            const SimTK::State& state, const SimTK::Vector& udot) const;
+#endif
+
+protected:
+    void extendFinalizeFromProperties() override;
+    void extendConnectToModel(Model& model) override;
+    void extendAddToSystem(SimTK::MultibodySystem& system) const override;
+
+private:
     void constructProperties();
 
-    // Return the cached result, computing it if the cache is stale.
+    // Return the cached result (computed with state.getUDot()), computing it
+    // if the cache is stale.
     const ZMPResult& getZMPResult(const SimTK::State& state) const;
-    ZMPResult calcZMPResult(const SimTK::State& state) const;
 
     // Created in extendConnectToModel(); not copied with the component.
     mutable SimTK::ResetOnCopy<std::unique_ptr<InverseDynamicsSolver>>

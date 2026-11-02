@@ -25,6 +25,9 @@ OpenSimAddTest(NAME testExponentialContact
 OpenSimAddTest(NAME testZeroMomentPointEstimator
         LINKLIBS ${OSIM_SIMULATION_TEST_LIBS})
 
+OpenSimAddTest(NAME testZeroMomentPointUtilities
+        LINKLIBS ${OSIM_SIMULATION_TEST_LIBS})
+
 OpenSimAddTest(NAME testForceProducer
         LINKLIBS ${OSIM_SIMULATION_TEST_LIBS})
 

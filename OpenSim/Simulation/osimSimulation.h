@@ -143,6 +143,7 @@
 #include "OpenSense/OpenSenseUtilities.h"
 #include "OpenSense/IMU.h"
 #include "SimulationUtilities.h"
+#include "ZeroMomentPointUtilities.h"
 #include "VisualizerUtilities.h"
 
 #include "RegisterTypes_osimSimulation.h"   // to expose RegisterTypes_osimSimulation
