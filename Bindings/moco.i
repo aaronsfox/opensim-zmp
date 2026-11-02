@@ -52,6 +52,7 @@ namespace OpenSim {
 %include <OpenSim/Moco/MocoOutputBoundConstraint.h>
 %include <OpenSim/Moco/MocoStateBoundConstraint.h>
 %include <OpenSim/Moco/MocoFrameDistanceConstraint.h>
+%include <OpenSim/Moco/MocoContactPointConstraint.h>
 %include <OpenSim/Moco/MocoOutputConstraint.h>
 
 %include <OpenSim/Moco/MocoProblemRep.h>

@@ -81,6 +81,8 @@ set(MOCO_SOURCES
         MocoControlBoundConstraint.h
         MocoFrameDistanceConstraint.h
         MocoFrameDistanceConstraint.cpp
+        MocoContactPointConstraint.h
+        MocoContactPointConstraint.cpp
         MocoOutputConstraint.h
         MocoOutputConstraint.cpp
         Components/DiscreteForces.h
