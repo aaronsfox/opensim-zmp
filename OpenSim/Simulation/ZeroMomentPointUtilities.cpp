@@ -23,13 +23,14 @@
 
 #include "ZeroMomentPointUtilities.h"
 
+#include "Model/ExternalForce.h"
 #include "Model/ZeroMomentPointEstimator.h"
 #include "PositionMotion.h"
+#include "SimbodyEngine/Body.h"
 #include "SimulationUtilities.h"
 #include <algorithm>
 #include <format>
 #include <memory>
-#include <unordered_map>
 #include <vector>
 
 #include <OpenSim/Common/Constant.h>
@@ -42,6 +43,9 @@ namespace {
 
 constexpr int splineDegree = 5;
 
+using ZMPResult = ZeroMomentPointEstimator::ZMPResult;
+using ContactMode = ZeroMomentPointEstimator::ContactMode;
+
 // Join strings for messages.
 std::string join(const std::vector<std::string>& items) {
     std::string joined;
@@ -52,7 +56,13 @@ std::string join(const std::vector<std::string>& items) {
     return joined;
 }
 
-// Apply the processing steps shared by both utilities (see the header).
+bool endsWith(const std::string& text, const std::string& suffix) {
+    return text.size() >= suffix.size() &&
+           text.compare(text.size() - suffix.size(), suffix.size(), suffix) ==
+                   0;
+}
+
+// Apply the processing steps described in the header.
 TimeSeriesTable processInputTable(const Model& model,
         const TableProcessor& input, double lowpassCutoffFrequency) {
     TimeSeriesTable table = input.process(&model);
@@ -64,8 +74,8 @@ TimeSeriesTable processInputTable(const Model& model,
     updateStateLabels40(model, labels);
     table.setColumnLabels(labels);
 
-    // Convert only if the table says it is in degrees. Tables created in
-    // code often have no inDegrees metadata; treat them as radians.
+    // Tables created in code often have no inDegrees metadata; treat them as
+    // radians.
     if (table.hasTableMetaDataKey("inDegrees")) {
         if (TableUtilities::isInDegrees(table)) {
             model.getSimbodyEngine().convertDegreesToRadians(table);
@@ -102,15 +112,27 @@ const ZeroMomentPointEstimator& findEstimator(
     return *found;
 }
 
-// Output table with 9 columns per side (see the header).
+// Column labels and ExternalForce identifiers for a side. Both come from
+// here so the table and the ExternalLoads always agree.
+std::string forceIdentifier(const std::string& side) {
+    return side + "_force_v";
+}
+std::string pointIdentifier(const std::string& side) {
+    return side + "_force_p";
+}
+std::string torqueIdentifier(const std::string& side) {
+    return side + "_torque_";
+}
+
 TimeSeriesTable createOutputTable(const ZeroMomentPointEstimator& estimator) {
     std::vector<std::string> labels;
     for (int i = 0; i < estimator.getNumContactSides(); ++i) {
         const std::string& side = estimator.getContactSide(i).getName();
-        for (const char* suffix : {"_force_vx", "_force_vy", "_force_vz",
-                     "_force_px", "_force_py", "_force_pz", "_torque_x",
-                     "_torque_y", "_torque_z"}) {
-            labels.push_back(side + suffix);
+        for (const std::string& prefix : {forceIdentifier(side),
+                     pointIdentifier(side), torqueIdentifier(side)}) {
+            for (const char* axis : {"x", "y", "z"}) {
+                labels.push_back(prefix + axis);
+            }
         }
     }
     TimeSeriesTable table;
@@ -119,8 +141,9 @@ TimeSeriesTable createOutputTable(const ZeroMomentPointEstimator& estimator) {
     return table;
 }
 
-void appendResult(TimeSeriesTable& table, double time,
-        const ZeroMomentPointEstimator::ZMPResult& result) {
+void appendResult(
+        TimeSeriesTable& table, double time, const ZMPResult& result) {
+    // Size from the labels: an empty table reports zero columns.
     SimTK::RowVector row(static_cast<int>(table.getColumnLabels().size()), 0.0);
     int col = 0;
     for (const auto& side : result.sides) {
@@ -135,59 +158,142 @@ void appendResult(TimeSeriesTable& table, double time,
 // A quintic interpolating spline of one column of `table`.
 GCVSpline createSpline(const TimeSeriesTable& table, const std::string& label) {
     const auto& times = table.getIndependentColumn();
-    const auto column = table.getDependentColumn(label);
-    std::vector<double> values(column.size());
-    for (int i = 0; i < column.size(); ++i) values[i] = column[i];
     OPENSIM_THROW_IF(static_cast<int>(times.size()) <= splineDegree, Exception,
             std::format("Expected at least {} rows to fit splines, but the "
                         "table has {}.",
                     splineDegree + 1, times.size()));
+    const auto column = table.getDependentColumn(label);
+    std::vector<double> values(column.size());
+    for (int i = 0; i < column.size(); ++i) values[i] = column[i];
     return GCVSpline(splineDegree, static_cast<int>(times.size()), times.data(),
             values.data(), label, 0.0);
 }
 
-bool endsWith(const std::string& text, const std::string& suffix) {
-    return text.size() >= suffix.size() &&
-           text.compare(text.size() - suffix.size(), suffix.size(), suffix) ==
-                   0;
-}
+// Reports periods (runs of consecutive frames) in which some side has no
+// ground reaction, with one warning per period, as the frames are processed.
+class InvalidPeriodReporter {
+public:
+    void add(double time, const ZMPResult& result) {
+        const std::string reason = describe(result);
+        if (reason != m_reason) {
+            flush();
+            m_reason = reason;
+            m_start = time;
+            m_count = 0;
+        }
+        m_end = time;
+        ++m_count;
+    }
+    void flush() {
+        if (m_reason.empty() || m_count == 0) return;
+        const std::string when =
+                m_count == 1 ? std::format("at t = {:.4g} s", m_start)
+                             : std::format("from t = {:.4g} to {:.4g} s ({} "
+                                           "frames)",
+                                       m_start, m_end, m_count);
+        log_warn("createZMPLoadsFromStates: {} {}; ground reactions are zero "
+                 "for those frames.",
+                m_reason, when);
+        m_count = 0;
+    }
+
+private:
+    static std::string describe(const ZMPResult& result) {
+        switch (result.mode) {
+        case ContactMode::NoContact: return "no contact detected";
+        case ContactMode::Bilateral:
+            return "double support (both sides in contact; splitting the "
+                   "load is not yet implemented)";
+        case ContactMode::Unilateral:
+            for (const auto& side : result.sides) {
+                if (side.isInContact && !side.isValid) {
+                    return "contact detected but the vertical force is below "
+                           "contact_force_threshold";
+                }
+            }
+            return "";
+        }
+        return "";
+    }
+
+    std::string m_reason;
+    double m_start = 0;
+    double m_end = 0;
+    int m_count = 0;
+};
+
+// Which columns the table provides for the coordinates that have values.
+enum class Method { ValuesOnly, ValuesAndSpeeds, ValuesSpeedsAndAccels };
 
 } // namespace
 
 //=============================================================================
-// FROM KINEMATICS
+// GROUND REACTIONS
 //=============================================================================
-TimeSeriesTable createZMPLoadsFromKinematics(Model model,
-        const TableProcessor& kinematics, double lowpassCutoffFrequency,
-        const std::string& estimatorPath) {
+TimeSeriesTable createZMPLoadsFromStates(Model model,
+        const TableProcessor& states, const std::string& estimatorPath,
+        double lowpassCutoffFrequency) {
     // A system is needed to process the table (state names, degrees).
     model.initSystem();
     const TimeSeriesTable table =
-            processInputTable(model, kinematics, lowpassCutoffFrequency);
+            processInputTable(model, states, lowpassCutoffFrequency);
 
-    // Prescribe every coordinate: with a spline of its values if present,
-    // otherwise at its default value.
-    auto motion = std::make_unique<PositionMotion>("zmp_position_motion");
-    std::vector<std::string> used;
-    std::vector<std::string> missing;
+    // Coordinate coverage.
+    std::vector<const Coordinate*> withValues;
+    std::vector<std::string> missingValues;
+    std::vector<std::string> missingSpeeds;
+    std::vector<std::string> missingAccels;
     for (const auto& coord : model.getComponentList<Coordinate>()) {
-        const std::string label = coord.getAbsolutePathString() + "/value";
-        if (table.hasColumn(label)) {
-            motion->setPositionForCoordinate(coord, createSpline(table, label));
-            used.push_back(label);
-        } else {
-            motion->setPositionForCoordinate(
-                    coord, Constant(coord.getDefaultValue()));
-            missing.push_back(coord.getAbsolutePathString());
+        const std::string path = coord.getAbsolutePathString();
+        if (!table.hasColumn(path + "/value")) {
+            missingValues.push_back(path);
+            continue;
         }
+        withValues.push_back(&coord);
+        if (!table.hasColumn(path + "/speed")) missingSpeeds.push_back(path);
+        if (!table.hasColumn(path + "/accel")) missingAccels.push_back(path);
     }
-    OPENSIM_THROW_IF(used.empty(), Exception,
-            "Expected the kinematics table to contain coordinate values, but "
-            "no column matches a coordinate in the model.");
-    if (!missing.empty()) {
-        log_warn("createZMPLoadsFromKinematics: no values for coordinate(s) "
-                 "{}; using their default values.",
-                join(missing));
+    OPENSIM_THROW_IF(withValues.empty(), Exception,
+            "Expected the states table to contain coordinate values, but no "
+            "column matches a coordinate in the model.");
+    if (!missingValues.empty()) {
+        log_warn("createZMPLoadsFromStates: no values for coordinate(s) {}; "
+                 "using their default values and zero speeds.",
+                join(missingValues));
+    }
+
+    // Choose the method from the columns available (see the header).
+    Method method = Method::ValuesOnly;
+    if (missingSpeeds.empty()) {
+        method = missingAccels.empty() ? Method::ValuesSpeedsAndAccels
+                                       : Method::ValuesAndSpeeds;
+        if (!missingAccels.empty() &&
+                missingAccels.size() < withValues.size()) {
+            log_warn("createZMPLoadsFromStates: no accelerations for "
+                     "coordinate(s) {}; ignoring all acceleration columns.",
+                    join(missingAccels));
+        }
+    } else if (missingSpeeds.size() < withValues.size()) {
+        log_warn("createZMPLoadsFromStates: no speeds for coordinate(s) {}; "
+                 "ignoring all speed columns.",
+                join(missingSpeeds));
+    }
+
+    // Columns used by each method; report the rest.
+    std::vector<std::string> used;
+    const auto yIndices = createSystemYIndexMap(model);
+    for (const auto& label : table.getColumnLabels()) {
+        const bool isState = yIndices.count(label) > 0;
+        const bool isValue = isState && endsWith(label, "/value");
+        const bool isAccel = endsWith(label, "/accel") &&
+                             yIndices.count(label.substr(0, label.size() - 6) +
+                                            "/speed") > 0;
+        if ((method == Method::ValuesOnly && isValue) ||
+                (method == Method::ValuesAndSpeeds && isState) ||
+                (method == Method::ValuesSpeedsAndAccels &&
+                        (isState || isAccel))) {
+            used.push_back(label);
+        }
     }
     std::vector<std::string> ignored;
     for (const auto& label : table.getColumnLabels()) {
@@ -196,126 +302,97 @@ TimeSeriesTable createZMPLoadsFromKinematics(Model model,
         }
     }
     if (!ignored.empty()) {
-        log_info("createZMPLoadsFromKinematics: ignoring column(s) {}.",
+        log_info("createZMPLoadsFromStates: ignoring column(s) {}.",
                 join(ignored));
     }
 
-    model.addComponent(motion.release());
-    SimTK::State& state = model.initSystem();
-    const auto& estimator = findEstimator(model, estimatorPath);
+    const auto& times = table.getIndependentColumn();
+    InvalidPeriodReporter reporter;
 
-    TimeSeriesTable loads = createOutputTable(estimator);
-    for (const double time : table.getIndependentColumn()) {
-        state.setTime(time);
-        model.getSystem().prescribe(state);
-        model.realizeAcceleration(state);
-        appendResult(
-                loads, time, estimator.calcZMPResult(state, state.getUDot()));
+    if (method == Method::ValuesOnly) {
+        log_info("createZMPLoadsFromStates: using coordinate values; speeds "
+                 "and accelerations are derivatives of splines of the "
+                 "values (PositionMotion).");
+
+        // Prescribe every coordinate: with a spline of its values if
+        // present, otherwise at its default value.
+        auto motion = std::make_unique<PositionMotion>("zmp_position_motion");
+        for (const auto& coord : model.getComponentList<Coordinate>()) {
+            const std::string label = coord.getAbsolutePathString() + "/value";
+            if (table.hasColumn(label)) {
+                motion->setPositionForCoordinate(
+                        coord, createSpline(table, label));
+            } else {
+                motion->setPositionForCoordinate(
+                        coord, Constant(coord.getDefaultValue()));
+            }
+        }
+        model.addComponent(motion.release());
+        SimTK::State& state = model.initSystem();
+        const auto& estimator = findEstimator(model, estimatorPath);
+
+        TimeSeriesTable loads = createOutputTable(estimator);
+        for (const double time : times) {
+            state.setTime(time);
+            model.getSystem().prescribe(state);
+            model.realizeAcceleration(state);
+            const ZMPResult result =
+                    estimator.calcZMPResult(state, state.getUDot());
+            reporter.add(time, result);
+            appendResult(loads, time, result);
+        }
+        reporter.flush();
+        return loads;
     }
-    return loads;
-}
 
-//=============================================================================
-// FROM STATES
-//=============================================================================
-TimeSeriesTable createZMPLoadsFromStates(Model model,
-        const TableProcessor& states, double lowpassCutoffFrequency,
-        const std::string& estimatorPath) {
+    // States as given. Y = [q, u, z], so a speed's mobility index is its Y
+    // index minus nq.
     SimTK::State& state = model.initSystem();
-    const TimeSeriesTable table =
-            processInputTable(model, states, lowpassCutoffFrequency);
     const auto& estimator = findEstimator(model, estimatorPath);
-
-    // Y = [q, u, z], so a speed's mobility index is its Y index minus nq.
-    const auto yIndices = createSystemYIndexMap(model);
     const int nq = state.getNQ();
-    const int nu = state.getNU();
 
-    // Columns that are state variables, and acceleration columns.
     std::vector<std::pair<int, int>> stateColumns; // (column, Y index)
     std::vector<std::pair<int, int>> accelColumns; // (column, U index)
-    std::vector<std::string> ignored;
     const auto& labels = table.getColumnLabels();
     for (int col = 0; col < static_cast<int>(labels.size()); ++col) {
         const std::string& label = labels[col];
         if (const auto it = yIndices.find(label); it != yIndices.end()) {
             stateColumns.emplace_back(col, it->second);
-            continue;
-        }
-        if (endsWith(label, "/accel")) {
-            const std::string speed =
-                    label.substr(0, label.size() - 6) + "/speed";
-            if (const auto it = yIndices.find(speed); it != yIndices.end()) {
-                accelColumns.emplace_back(col, it->second - nq);
-                continue;
+        } else if (method == Method::ValuesSpeedsAndAccels &&
+                   endsWith(label, "/accel")) {
+            const auto speed =
+                    yIndices.find(label.substr(0, label.size() - 6) + "/speed");
+            if (speed != yIndices.end()) {
+                accelColumns.emplace_back(col, speed->second - nq);
             }
         }
-        ignored.push_back(label);
-    }
-    if (!ignored.empty()) {
-        log_info("createZMPLoadsFromStates: ignoring column(s) {}.",
-                join(ignored));
     }
 
-    // Coordinate coverage.
-    std::vector<std::string> missingValues;
-    std::vector<std::string> missingSpeeds;
-    std::vector<std::string> missingAccels;
-    std::vector<std::pair<std::string, int>> speedColumns; // (label, U index)
-    for (const auto& coord : model.getComponentList<Coordinate>()) {
-        const std::string path = coord.getAbsolutePathString();
-        if (!table.hasColumn(path + "/value")) missingValues.push_back(path);
-        if (table.hasColumn(path + "/speed")) {
-            speedColumns.emplace_back(
-                    path + "/speed", yIndices.at(path + "/speed") - nq);
-        } else {
-            missingSpeeds.push_back(path);
+    std::vector<std::pair<GCVSpline, int>> speedSplines; // (spline, U index)
+    if (method == Method::ValuesAndSpeeds) {
+        log_info("createZMPLoadsFromStates: using coordinate values and "
+                 "speeds; accelerations are derivatives of splines of the "
+                 "speeds.");
+        for (const Coordinate* coord : withValues) {
+            const std::string label = coord->getAbsolutePathString() + "/speed";
+            speedSplines.emplace_back(
+                    createSpline(table, label), yIndices.at(label) - nq);
         }
-        if (!table.hasColumn(path + "/accel")) missingAccels.push_back(path);
-    }
-    OPENSIM_THROW_IF(missingValues.size() == static_cast<std::size_t>(
-                                                     model.getNumCoordinates()),
-            Exception,
-            "Expected the states table to contain coordinate values, but no "
-            "column matches a coordinate value in the model.");
-    if (!missingValues.empty()) {
-        log_warn("createZMPLoadsFromStates: no values for coordinate(s) {}; "
-                 "using their default values.",
-                join(missingValues));
-    }
-    if (!missingSpeeds.empty()) {
-        log_warn("createZMPLoadsFromStates: no speeds for coordinate(s) {}; "
-                 "using their default values (0) and zero accelerations.",
-                join(missingSpeeds));
-    }
-    const bool useAccelColumns = !accelColumns.empty();
-    OPENSIM_THROW_IF(useAccelColumns && !missingAccels.empty(), Exception,
-            std::format("Expected accelerations ('<coordinate path>/accel') "
-                        "for every coordinate or none, but they are missing "
-                        "for {}.",
-                    join(missingAccels)));
-
-    // Without acceleration columns, differentiate splines of the speeds.
-    std::vector<std::pair<GCVSpline, int>> speedSplines;
-    if (!useAccelColumns) {
-        log_info("createZMPLoadsFromStates: no acceleration columns; "
-                 "computing accelerations from splines of the speeds.");
-        for (const auto& [label, uIndex] : speedColumns) {
-            speedSplines.emplace_back(createSpline(table, label), uIndex);
-        }
+    } else {
+        log_info("createZMPLoadsFromStates: using coordinate values, speeds "
+                 "and accelerations from the table.");
     }
 
     TimeSeriesTable loads = createOutputTable(estimator);
-    const auto& times = table.getIndependentColumn();
     const std::vector<int> firstDerivative{0};
-    SimTK::Vector udot(nu, 0.0);
+    SimTK::Vector udot(state.getNU(), 0.0);
     for (int row = 0; row < static_cast<int>(times.size()); ++row) {
         const auto values = table.getRowAtIndex(row);
         state.setTime(times[row]);
         for (const auto& [col, yIndex] : stateColumns) {
             state.updY()[yIndex] = values[col];
         }
-        if (useAccelColumns) {
+        if (method == Method::ValuesSpeedsAndAccels) {
             for (const auto& [col, uIndex] : accelColumns) {
                 udot[uIndex] = values[col];
             }
@@ -326,7 +403,50 @@ TimeSeriesTable createZMPLoadsFromStates(Model model,
             }
         }
         model.realizeVelocity(state);
-        appendResult(loads, times[row], estimator.calcZMPResult(state, udot));
+        const ZMPResult result = estimator.calcZMPResult(state, udot);
+        reporter.add(times[row], result);
+        appendResult(loads, times[row], result);
+    }
+    reporter.flush();
+    return loads;
+}
+
+//=============================================================================
+// EXTERNAL LOADS
+//=============================================================================
+ExternalLoads createZMPExternalLoads(Model model,
+        const std::string& dataFileName, const std::string& estimatorPath) {
+    // Connect the model so the contact bodies can be resolved.
+    model.initSystem();
+    const auto& estimator = findEstimator(model, estimatorPath);
+
+    ExternalLoads loads;
+    loads.setName("zmp_external_loads");
+    loads.setDataFileName(dataFileName);
+    for (int i = 0; i < estimator.getNumContactSides(); ++i) {
+        const ContactSide& side = estimator.getContactSide(i);
+        const std::string& name = side.getName();
+
+        // ExternalForce applies forces to a body.
+        const Frame& base = side.getContactBody().findBaseFrame();
+        OPENSIM_THROW_IF(dynamic_cast<const Body*>(&base) == nullptr, Exception,
+                std::format("Expected the contact body of ContactSide '{}' "
+                            "to be attached to a Body, but its base frame is "
+                            "'{}'.",
+                        name, base.getAbsolutePathString()));
+        const std::string body = model.getBodySet().contains(base.getName())
+                                         ? base.getName()
+                                         : base.getAbsolutePathString();
+
+        auto force = std::make_unique<ExternalForce>();
+        force->setName(name);
+        force->set_applied_to_body(body);
+        force->set_force_expressed_in_body("ground");
+        force->set_point_expressed_in_body("ground");
+        force->setForceIdentifier(forceIdentifier(name));
+        force->setPointIdentifier(pointIdentifier(name));
+        force->setTorqueIdentifier(torqueIdentifier(name));
+        loads.adoptAndAppend(force.release());
     }
     return loads;
 }
