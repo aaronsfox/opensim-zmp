@@ -72,9 +72,21 @@ The `velocity` method is recommended for gait. The `distance` method alone
 cannot distinguish a stationary stance foot from a swing foot passing close to
 the floor (minimum toe clearance in walking is typically only 1-2 cm).
 
-Contact is assessed independently at each state. Detection on its own can
-switch on and off rapidly near the thresholds; trajectory-level processing
-(e.g., a minimum contact duration) is outside the scope of this component.
+### Hysteresis (optional)
+Near a threshold, detection can switch on and off rapidly from one frame to
+the next. With hysteresis, contact starts with the thresholds above (the "on"
+thresholds) but only ends when the point rises above `distance_off_threshold`
+or, for the 'velocity' method, moves faster than `velocity_off_threshold`
+(the "off" thresholds). Each off threshold must be greater than its on
+threshold. Hysteresis is off by default (both off thresholds -1); it is used
+when the off thresholds for the point's method are set: `distance_off_threshold`
+for the 'distance' method, and both off thresholds for the 'velocity' method.
+
+Hysteresis depends on whether the point was in contact in the previous frame,
+so it is applied by createZMPLoadsFromStates(), which processes frames in
+order, and by isInContact(state, previouslyInContact). The `is_in_contact`
+output and isInContact(state) assess each state on its own and use only the on
+thresholds. See also ContactSide's `minimum_contact_duration`.
 
 ### References
 - Karcnik T (2003). Using motion analysis data for foot-floor contact
@@ -104,6 +116,17 @@ public:
     OpenSim_DECLARE_PROPERTY(contact_checking_method, std::string,
             "Contact criterion: 'distance' (height only) or 'velocity' "
             "(height and velocity; Karcnik 2003). Default 'distance'.");
+
+    OpenSim_DECLARE_PROPERTY(distance_off_threshold, double,
+            "Hysteresis: height (m) above the ground plane above which a point "
+            "that is in contact leaves contact. Must be greater than "
+            "distance_threshold. Default -1 (unused; no hysteresis).");
+
+    OpenSim_DECLARE_PROPERTY(velocity_off_threshold, double,
+            "Hysteresis: velocity magnitude (m/s) above which a point that is "
+            "in contact leaves contact ('velocity' method only). Must be "
+            "greater than velocity_threshold. Default -1 (unused; no "
+            "hysteresis).");
 
     //==========================================================================
     // OUTPUTS
@@ -151,6 +174,21 @@ public:
     ContactCheckingMethod getContactCheckingMethod() const {
         return _contactCheckingMethod;
     }
+    /** Hysteresis "off" thresholds; -1 means unused. */
+    double getDistanceOffThreshold() const {
+        return get_distance_off_threshold();
+    }
+    void setDistanceOffThreshold(double distanceOffThreshold);
+    double getVelocityOffThreshold() const {
+        return get_velocity_off_threshold();
+    }
+    void setVelocityOffThreshold(double velocityOffThreshold);
+
+    /** Whether hysteresis is used: the off thresholds for the point's method
+    are set (see class description). Only valid after
+    finalizeFromProperties(). */
+    bool usesHysteresis() const { return _usesHysteresis; }
+
     /** The connectee path of the `parent_frame` Socket (e.g.,
     "/bodyset/calcn_r"). */
     const std::string& getParentFrameName() const;
@@ -171,6 +209,13 @@ public:
     'distance' method). */
     bool isInContact(const SimTK::State& state) const;
 
+    /** Whether the point is in contact given whether it was in contact in the
+    previous frame. With hysteresis, a point that was in contact stays in
+    contact until it exceeds the off thresholds; otherwise (and without
+    hysteresis) this is the same as isInContact(state). Same stage
+    requirements as isInContact(state). */
+    bool isInContact(const SimTK::State& state, bool previouslyInContact) const;
+
 protected:
     void extendFinalizeFromProperties() override;
 
@@ -179,6 +224,7 @@ private:
 
     ContactCheckingMethod _contactCheckingMethod =
             ContactCheckingMethod::Distance;
+    bool _usesHysteresis = false;
 };
 
 } // namespace OpenSim

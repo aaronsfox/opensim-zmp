@@ -23,6 +23,8 @@
 
 #include <array>
 #include <catch2/catch_all.hpp>
+#include <cmath>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -213,6 +215,42 @@ void checkMatchesReference(const TimeSeriesTable& loads,
     }
 }
 
+// Table with absolute state paths (radians, no inDegrees metadata), with
+// coordinate values from `value(coordinate, frame, time)` and, if
+// `withSpeeds`, zero speeds.
+TimeSeriesTable createCustomTable(const std::vector<double>& times,
+        const std::function<double(int, int, double)>& value, bool withSpeeds) {
+    std::vector<std::string> labels;
+    for (int c = 0; c < 6; ++c) {
+        labels.push_back(jointPath + coordNames[c] + "/value");
+        if (withSpeeds) labels.push_back(jointPath + coordNames[c] + "/speed");
+    }
+    TimeSeriesTable table;
+    table.setColumnLabels(labels);
+    for (int frame = 0; frame < static_cast<int>(times.size()); ++frame) {
+        SimTK::RowVector row(static_cast<int>(labels.size()), 0.0);
+        int col = 0;
+        for (int c = 0; c < 6; ++c) {
+            row[col++] = value(c, frame, times[frame]);
+            if (withSpeeds) row[col++] = 0.0;
+        }
+        table.appendRow(times[frame], row);
+    }
+    return table;
+}
+
+// Number of separate periods with a vertical ground reaction.
+int countLoadedPeriods(const TimeSeriesTable& loads) {
+    int periods = 0;
+    bool loaded = false;
+    for (std::size_t i = 0; i < loads.getNumRows(); ++i) {
+        const bool now = loads.getRowAtIndex(i)[1] > 0;
+        if (now && !loaded) ++periods;
+        loaded = now;
+    }
+    return periods;
+}
+
 // Collects log messages.
 class CapturingLogSink : public LogSink {
 public:
@@ -380,6 +418,88 @@ TEST_CASE("createZMPLoadsFromStates reports periods without loads") {
     CHECK(log.contains("no contact detected from t = 0.18 to 0.5 s"));
     CHECK(loads.getRowAtIndex(10)[1] > 0);
     CHECK(loads.getRowAtIndex(30)[1] == 0);
+}
+
+TEST_CASE("createZMPLoadsFromStates contact hysteresis") {
+    Model model = createFootModel();
+    std::vector<double> times;
+    for (int i = 0; i <= 100; ++i) times.push_back(0.01 * i);
+
+    // The sole height oscillates around the 8 mm on threshold (5.5 to 11.5
+    // mm, centred off the threshold so no sample lands exactly on it), so
+    // contact without hysteresis switches on and off three times.
+    const auto table = createCustomTable(
+            times,
+            [](int c, int, double t) {
+                if (c == 4) {
+                    return halfHeight + 0.0085 +
+                           0.003 * std::sin(2 * SimTK::Pi * 3 * t);
+                }
+                return stanceMotion[c].value(0);
+            },
+            false);
+
+    CHECK(countLoadedPeriods(createZMPLoadsFromStates(model, table)) == 3);
+
+    // With an off threshold above the highest point (12 mm), contact never
+    // ends once it starts.
+    auto& side = model.updComponent<ContactSide>("/zmp/right");
+    for (int j = 0; j < side.getNumContactPoints(); ++j) {
+        side.updContactPoint(j).setDistanceOffThreshold(0.012);
+    }
+    model.finalizeConnections();
+    LogCapture log;
+    const auto loads = createZMPLoadsFromStates(model, table);
+    CHECK(countLoadedPeriods(loads) == 1);
+    CHECK(loads.getRowAtIndex(100)[1] > 0);
+    CHECK(log.contains("using contact hysteresis"));
+}
+
+TEST_CASE("createZMPLoadsFromStates minimum contact duration") {
+    Model model = createFootModel();
+    std::vector<double> times;
+    for (int i = 0; i <= 100; ++i) times.push_back(0.01 * i);
+
+    // The foot is lifted (2 cm) at frames 0-1 (a short period at the start),
+    // 20-21 (a 0.02 s gap), and 60-100 except a 0.02 s touch at 80-81.
+    // States: values and zero speeds, so the foot is static when in contact.
+    auto lifted = [](int frame) {
+        return frame <= 1 || frame == 20 || frame == 21 ||
+               (frame >= 60 && frame != 80 && frame != 81);
+    };
+    const auto table = createCustomTable(
+            times,
+            [&](int c, int frame, double) {
+                if (c == 4) return halfHeight + (lifted(frame) ? 0.02 : 0.0);
+                return stanceMotion[c].value(0);
+            },
+            true);
+
+    // Without a minimum duration, every period is kept.
+    {
+        const auto loads = createZMPLoadsFromStates(model, table);
+        CHECK(countLoadedPeriods(loads) == 3);
+        CHECK(loads.getRowAtIndex(20)[1] == 0);
+        CHECK(loads.getRowAtIndex(80)[1] > 0);
+    }
+
+    model.updComponent<ContactSide>("/zmp/right")
+            .setMinimumContactDuration(0.05);
+    model.finalizeConnections();
+    LogCapture log;
+    const auto loads = createZMPLoadsFromStates(model, table);
+    CHECK(countLoadedPeriods(loads) == 1);
+    // The gap is filled and the touch removed; the start period is kept.
+    CHECK(loads.getRowAtIndex(0)[1] == 0);
+    CHECK(loads.getRowAtIndex(1)[1] == 0);
+    for (int frame = 2; frame < 60; ++frame) {
+        CHECK(loads.getRowAtIndex(frame)[1] > 0);
+    }
+    for (int frame = 60; frame <= 100; ++frame) {
+        CHECK(loads.getRowAtIndex(frame)[1] == 0);
+    }
+    CHECK(log.contains("removed 1 contact period(s) and 1 no-contact "
+                       "period(s) shorter than 0.05 s"));
 }
 
 TEST_CASE("createZMPExternalLoads") {

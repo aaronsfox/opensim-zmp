@@ -107,6 +107,20 @@ speed), with a warning listing them. Other missing state variables (e.g.,
 muscle states) take their defaults; they do not affect the estimate, which uses
 gravity as the only applied force.
 
+### Contact detection over time
+Contact is first detected for every frame, in order, then the ground
+reactions are estimated with that contact status. This allows two optional
+smoothing steps that depend on neighbouring frames (both off by default):
+- **Hysteresis** per ContactPoint (`distance_off_threshold`,
+  `velocity_off_threshold`): a point in contact stays in contact until it
+  exceeds the off thresholds, so it cannot switch on and off from frame to
+  frame near the on thresholds.
+- **Minimum duration** per ContactSide (`minimum_contact_duration`): contact
+  and no-contact periods shorter than it are removed (except at the start or
+  end of the trial); the number removed is reported.
+Hysteresis is applied first, then the minimum duration. The warnings about
+periods without ground reactions describe the final contact status.
+
 ### Model
 The model is copied, so the caller's model is not changed. It must contain a
 ZeroMomentPointEstimator: the one at `estimatorPath`, or, if the path is empty,

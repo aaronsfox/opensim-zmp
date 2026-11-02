@@ -30,6 +30,7 @@
 #include "SimulationUtilities.h"
 #include <algorithm>
 #include <format>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -222,6 +223,57 @@ private:
     int m_count = 0;
 };
 
+// Removes contact (true) and no-contact (false) periods shorter than
+// `minimumDuration` from `flags`, shortest first. A removed period takes the
+// status of its neighbours and merges with them. Periods at the start or end
+// are kept, since the trial may cut them short. The duration of a period is
+// from its first frame to the first frame of the next period. Returns the
+// number of contact and no-contact periods removed.
+std::pair<int, int> removeShortPeriods(std::vector<bool>& flags,
+        const std::vector<double>& times, double minimumDuration) {
+    struct Period {
+        int start, end; // First and last frame (inclusive).
+        bool inContact;
+    };
+    std::vector<Period> periods;
+    for (int row = 0; row < static_cast<int>(flags.size()); ++row) {
+        if (periods.empty() || periods.back().inContact != flags[row]) {
+            periods.push_back({row, row, flags[row]});
+        } else {
+            periods.back().end = row;
+        }
+    }
+
+    int removedContacts = 0;
+    int removedGaps = 0;
+    while (periods.size() >= 3) {
+        // The shortest interior period.
+        int shortest = -1;
+        double shortestDuration = minimumDuration;
+        for (int p = 1; p < static_cast<int>(periods.size()) - 1; ++p) {
+            const double duration =
+                    times[periods[p].end + 1] - times[periods[p].start];
+            if (duration < shortestDuration) {
+                shortest = p;
+                shortestDuration = duration;
+            }
+        }
+        if (shortest < 0) break;
+        (periods[shortest].inContact ? removedContacts : removedGaps) += 1;
+        // Merge with both neighbours, which share the opposite status.
+        periods[shortest - 1].end = periods[shortest + 1].end;
+        periods.erase(
+                periods.begin() + shortest, periods.begin() + shortest + 2);
+    }
+
+    for (const auto& period : periods) {
+        for (int row = period.start; row <= period.end; ++row) {
+            flags[row] = period.inContact;
+        }
+    }
+    return {removedContacts, removedGaps};
+}
+
 // Which columns the table provides for the coordinates that have values.
 enum class Method { ValuesOnly, ValuesAndSpeeds, ValuesSpeedsAndAccels };
 
@@ -306,8 +358,18 @@ TimeSeriesTable createZMPLoadsFromStates(Model model,
                 join(ignored));
     }
 
+    // Set up how each frame's state and accelerations are obtained.
     const auto& times = table.getIndependentColumn();
-    InvalidPeriodReporter reporter;
+    const int numFrames = static_cast<int>(times.size());
+    SimTK::State* state = nullptr;
+    // Sets the state for a frame and realizes it to Stage::Velocity.
+    std::function<void(int)> setFrame;
+    // The frame's generalized accelerations; call after setFrame().
+    std::function<SimTK::Vector(int)> calcUDot;
+
+    std::vector<std::pair<int, int>> stateColumns;       // (column, Y index)
+    std::vector<std::pair<int, int>> accelColumns;       // (column, U index)
+    std::vector<std::pair<GCVSpline, int>> speedSplines; // (spline, U index)
 
     if (method == Method::ValuesOnly) {
         log_info("createZMPLoadsFromStates: using coordinate values; speeds "
@@ -328,82 +390,140 @@ TimeSeriesTable createZMPLoadsFromStates(Model model,
             }
         }
         model.addComponent(motion.release());
-        SimTK::State& state = model.initSystem();
-        const auto& estimator = findEstimator(model, estimatorPath);
+        state = &model.initSystem();
 
-        TimeSeriesTable loads = createOutputTable(estimator);
-        for (const double time : times) {
-            state.setTime(time);
-            model.getSystem().prescribe(state);
-            model.realizeAcceleration(state);
-            const ZMPResult result =
-                    estimator.calcZMPResult(state, state.getUDot());
-            reporter.add(time, result);
-            appendResult(loads, time, result);
-        }
-        reporter.flush();
-        return loads;
-    }
-
-    // States as given. Y = [q, u, z], so a speed's mobility index is its Y
-    // index minus nq.
-    SimTK::State& state = model.initSystem();
-    const auto& estimator = findEstimator(model, estimatorPath);
-    const int nq = state.getNQ();
-
-    std::vector<std::pair<int, int>> stateColumns; // (column, Y index)
-    std::vector<std::pair<int, int>> accelColumns; // (column, U index)
-    const auto& labels = table.getColumnLabels();
-    for (int col = 0; col < static_cast<int>(labels.size()); ++col) {
-        const std::string& label = labels[col];
-        if (const auto it = yIndices.find(label); it != yIndices.end()) {
-            stateColumns.emplace_back(col, it->second);
-        } else if (method == Method::ValuesSpeedsAndAccels &&
-                   endsWith(label, "/accel")) {
-            const auto speed =
-                    yIndices.find(label.substr(0, label.size() - 6) + "/speed");
-            if (speed != yIndices.end()) {
-                accelColumns.emplace_back(col, speed->second - nq);
+        setFrame = [&](int row) {
+            state->setTime(times[row]);
+            model.getSystem().prescribe(*state);
+            model.realizeVelocity(*state);
+        };
+        calcUDot = [&](int) {
+            model.realizeAcceleration(*state);
+            return SimTK::Vector(state->getUDot());
+        };
+    } else {
+        // States as given. Y = [q, u, z], so a speed's mobility index is its
+        // Y index minus nq.
+        state = &model.initSystem();
+        const int nq = state->getNQ();
+        const auto& labels = table.getColumnLabels();
+        for (int col = 0; col < static_cast<int>(labels.size()); ++col) {
+            const std::string& label = labels[col];
+            if (const auto it = yIndices.find(label); it != yIndices.end()) {
+                stateColumns.emplace_back(col, it->second);
+            } else if (method == Method::ValuesSpeedsAndAccels &&
+                       endsWith(label, "/accel")) {
+                const auto speed = yIndices.find(
+                        label.substr(0, label.size() - 6) + "/speed");
+                if (speed != yIndices.end()) {
+                    accelColumns.emplace_back(col, speed->second - nq);
+                }
             }
         }
-    }
 
-    std::vector<std::pair<GCVSpline, int>> speedSplines; // (spline, U index)
-    if (method == Method::ValuesAndSpeeds) {
-        log_info("createZMPLoadsFromStates: using coordinate values and "
-                 "speeds; accelerations are derivatives of splines of the "
-                 "speeds.");
-        for (const Coordinate* coord : withValues) {
-            const std::string label = coord->getAbsolutePathString() + "/speed";
-            speedSplines.emplace_back(
-                    createSpline(table, label), yIndices.at(label) - nq);
-        }
-    } else {
-        log_info("createZMPLoadsFromStates: using coordinate values, speeds "
-                 "and accelerations from the table.");
-    }
-
-    TimeSeriesTable loads = createOutputTable(estimator);
-    const std::vector<int> firstDerivative{0};
-    SimTK::Vector udot(state.getNU(), 0.0);
-    for (int row = 0; row < static_cast<int>(times.size()); ++row) {
-        const auto values = table.getRowAtIndex(row);
-        state.setTime(times[row]);
-        for (const auto& [col, yIndex] : stateColumns) {
-            state.updY()[yIndex] = values[col];
-        }
-        if (method == Method::ValuesSpeedsAndAccels) {
-            for (const auto& [col, uIndex] : accelColumns) {
-                udot[uIndex] = values[col];
+        if (method == Method::ValuesAndSpeeds) {
+            log_info("createZMPLoadsFromStates: using coordinate values and "
+                     "speeds; accelerations are derivatives of splines of "
+                     "the speeds.");
+            for (const Coordinate* coord : withValues) {
+                const std::string label =
+                        coord->getAbsolutePathString() + "/speed";
+                speedSplines.emplace_back(
+                        createSpline(table, label), yIndices.at(label) - nq);
             }
         } else {
-            const SimTK::Vector time(1, times[row]);
-            for (const auto& [spline, uIndex] : speedSplines) {
-                udot[uIndex] = spline.calcDerivative(firstDerivative, time);
+            log_info("createZMPLoadsFromStates: using coordinate values, "
+                     "speeds and accelerations from the table.");
+        }
+
+        setFrame = [&](int row) {
+            const auto values = table.getRowAtIndex(row);
+            state->setTime(times[row]);
+            for (const auto& [col, yIndex] : stateColumns) {
+                state->updY()[yIndex] = values[col];
+            }
+            model.realizeVelocity(*state);
+        };
+        calcUDot = [&](int row) {
+            SimTK::Vector udot(state->getNU(), 0.0);
+            if (method == Method::ValuesSpeedsAndAccels) {
+                const auto values = table.getRowAtIndex(row);
+                for (const auto& [col, uIndex] : accelColumns) {
+                    udot[uIndex] = values[col];
+                }
+            } else {
+                const std::vector<int> firstDerivative{0};
+                const SimTK::Vector time(1, times[row]);
+                for (const auto& [spline, uIndex] : speedSplines) {
+                    udot[uIndex] = spline.calcDerivative(firstDerivative, time);
+                }
+            }
+            return udot;
+        };
+    }
+    const auto& estimator = findEstimator(model, estimatorPath);
+    const int numSides = estimator.getNumContactSides();
+
+    // Pass 1: detect contact in every frame, in order, applying each
+    // ContactPoint's hysteresis (which depends on the previous frame).
+    std::vector<std::vector<bool>> sideContact(
+            numSides, std::vector<bool>(numFrames, false));
+    std::vector<std::vector<bool>> pointContact(numSides);
+    std::vector<std::string> hysteresisPoints;
+    for (int i = 0; i < numSides; ++i) {
+        const ContactSide& side = estimator.getContactSide(i);
+        pointContact[i].assign(side.getNumContactPoints(), false);
+        for (int j = 0; j < side.getNumContactPoints(); ++j) {
+            if (side.getContactPoint(j).usesHysteresis()) {
+                hysteresisPoints.push_back(side.getContactPoint(j).getName());
             }
         }
-        model.realizeVelocity(state);
-        const ZMPResult result = estimator.calcZMPResult(state, udot);
+    }
+    if (!hysteresisPoints.empty()) {
+        log_info("createZMPLoadsFromStates: using contact hysteresis for "
+                 "point(s) {}.",
+                join(hysteresisPoints));
+    }
+    for (int row = 0; row < numFrames; ++row) {
+        setFrame(row);
+        for (int i = 0; i < numSides; ++i) {
+            const ContactSide& side = estimator.getContactSide(i);
+            bool inContact = false;
+            for (int j = 0; j < side.getNumContactPoints(); ++j) {
+                const bool pointInContact = side.getContactPoint(j).isInContact(
+                        *state, pointContact[i][j]);
+                pointContact[i][j] = pointInContact;
+                inContact = inContact || pointInContact;
+            }
+            sideContact[i][row] = inContact;
+        }
+    }
+
+    // Pass 2: remove contact and no-contact periods shorter than each side's
+    // minimum_contact_duration.
+    for (int i = 0; i < numSides; ++i) {
+        const ContactSide& side = estimator.getContactSide(i);
+        const double minimumDuration = side.getMinimumContactDuration();
+        if (minimumDuration == -1) continue;
+        const auto [contacts, gaps] =
+                removeShortPeriods(sideContact[i], times, minimumDuration);
+        log_info("createZMPLoadsFromStates: side '{}': removed {} contact "
+                 "period(s) and {} no-contact period(s) shorter than {} s.",
+                side.getName(), contacts, gaps, minimumDuration);
+    }
+
+    // Pass 3: estimate the ground reactions with the final contact status.
+    TimeSeriesTable loads = createOutputTable(estimator);
+    InvalidPeriodReporter reporter;
+    std::vector<bool> sidesInContact(numSides);
+    for (int row = 0; row < numFrames; ++row) {
+        setFrame(row);
+        const SimTK::Vector udot = calcUDot(row);
+        for (int i = 0; i < numSides; ++i) {
+            sidesInContact[i] = sideContact[i][row];
+        }
+        const ZMPResult result =
+                estimator.calcZMPResult(*state, udot, sidesInContact);
         reporter.add(times[row], result);
         appendResult(loads, times[row], result);
     }

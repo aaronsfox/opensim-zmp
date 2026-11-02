@@ -365,6 +365,61 @@ TEST_CASE("ContactPoint contact checking methods") {
         CHECK(point.getDistanceThreshold() == 0.008);
         CHECK(point.getVelocityThreshold() == 0.015);
         CHECK(point.getContactCheckingMethodName() == "distance");
+        CHECK(point.getDistanceOffThreshold() == -1);
+        CHECK(point.getVelocityOffThreshold() == -1);
+    }
+
+    SECTION("Hysteresis keeps a point in contact until the off threshold") {
+        // Sole 10 mm above the ground: above the on threshold (8 mm), below
+        // the off threshold (12 mm).
+        FootModelOptions options;
+        options.coordinates[4] = std::make_shared<Constant>(halfHeight + 0.01);
+        auto model = createFootModel(options);
+        auto& side = model->updComponent<ContactSide>("/zmp/right");
+        for (int j = 0; j < side.getNumContactPoints(); ++j) {
+            side.updContactPoint(j).setDistanceOffThreshold(0.012);
+        }
+        SimTK::State& state = model->initSystem();
+        realizeAtTime(*model, state, 0.0);
+        const auto& point =
+                getEstimator(*model).getContactSide("right").getContactPoint(0);
+        CHECK(point.usesHysteresis());
+        CHECK_FALSE(point.isInContact(state));
+        CHECK_FALSE(point.isInContact(state, false));
+        CHECK(point.isInContact(state, true));
+    }
+
+    SECTION("Without hysteresis the previous status is ignored") {
+        FootModelOptions options;
+        options.coordinates[4] = std::make_shared<Constant>(halfHeight + 0.01);
+        auto model = createFootModel(options);
+        SimTK::State& state = model->initSystem();
+        realizeAtTime(*model, state, 0.0);
+        const auto& point =
+                getEstimator(*model).getContactSide("right").getContactPoint(0);
+        CHECK_FALSE(point.usesHysteresis());
+        CHECK_FALSE(point.isInContact(state, true));
+    }
+
+    SECTION("Velocity method hysteresis uses both off thresholds") {
+        // Sliding at 2 cm/s: above the on threshold (1.5 cm/s), below the off
+        // threshold (3 cm/s).
+        FootModelOptions options;
+        options.contactCheckingMethod = "velocity";
+        options.coordinates[3] = std::make_shared<LinearFunction>(0.02, 0.3);
+        auto model = createFootModel(options);
+        auto& side = model->updComponent<ContactSide>("/zmp/right");
+        for (int j = 0; j < side.getNumContactPoints(); ++j) {
+            side.updContactPoint(j).setDistanceOffThreshold(0.012);
+            side.updContactPoint(j).setVelocityOffThreshold(0.03);
+        }
+        SimTK::State& state = model->initSystem();
+        realizeAtTime(*model, state, 0.0);
+        const auto& point =
+                getEstimator(*model).getContactSide("right").getContactPoint(0);
+        CHECK(point.usesHysteresis());
+        CHECK_FALSE(point.isInContact(state, false));
+        CHECK(point.isInContact(state, true));
     }
 
     SECTION("distance ignores velocity") {
@@ -579,6 +634,33 @@ TEST_CASE("ZeroMomentPointEstimator naming and validation") {
         SECTION("velocity threshold") {
             zmp->updContactSide(0).updContactPoint(0).setVelocityThreshold(-1);
             CHECK_THROWS(model.initSystem());
+        }
+        SECTION("off thresholds must exceed on thresholds") {
+            auto& point = zmp->updContactSide(0).updContactPoint(0);
+            point.setDistanceOffThreshold(point.getDistanceThreshold());
+            CHECK_THROWS(model.initSystem());
+            point.setDistanceOffThreshold(-0.5);
+            CHECK_THROWS(model.initSystem());
+            point.setDistanceOffThreshold(-1);
+            point.setContactCheckingMethod("velocity");
+            point.setVelocityOffThreshold(0.01); // Below 0.015.
+            CHECK_THROWS(model.initSystem());
+        }
+        SECTION("velocity hysteresis needs both off thresholds") {
+            auto& point = zmp->updContactSide(0).updContactPoint(0);
+            point.setContactCheckingMethod("velocity");
+            point.setDistanceOffThreshold(0.012);
+            CHECK_THROWS(model.initSystem());
+            point.setVelocityOffThreshold(0.03);
+            CHECK_NOTHROW(model.initSystem());
+        }
+        SECTION("minimum contact duration") {
+            zmp->updContactSide(0).setMinimumContactDuration(0);
+            CHECK_THROWS(model.initSystem());
+            zmp->updContactSide(0).setMinimumContactDuration(-2);
+            CHECK_THROWS(model.initSystem());
+            zmp->updContactSide(0).setMinimumContactDuration(0.05);
+            CHECK_NOTHROW(model.initSystem());
         }
         SECTION("force threshold") {
             zmp->setContactForceThreshold(-1);

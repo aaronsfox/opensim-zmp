@@ -44,6 +44,7 @@ name is used as the output channel name by ZeroMomentPointEstimator (e.g.,
 
 ### Properties
 - `contact_points`: the ContactPoints owned by this side (at least one).
+- `minimum_contact_duration`: see below.
 
 ### Sockets
 - `contact_body`: the PhysicalFrame to which the ground reaction for this side
@@ -59,6 +60,16 @@ locations projected onto the ground plane. It is computed in the horizontal
 (x, z) plane of Ground; vertices are returned at the ground height and in
 counter-clockwise order in the (x, z) coordinate plane. With one active point
 the polygon is that point, and with two it is the segment between them.
+
+### Minimum contact duration (optional)
+When `minimum_contact_duration` (s) is set, periods of contact or of no
+contact that are shorter than it are removed: each such period takes the
+contact status of the periods around it (shortest periods first). Periods at
+the start or end of a trial are kept, since the trial may cut them short. This
+is off by default (-1). Like ContactPoint hysteresis, it needs the whole
+trajectory, so it is applied by createZMPLoadsFromStates(), after contact has
+been detected for every frame; the `is_in_contact` output assesses each state
+on its own and does not use it.
 
 ### Naming
 Unnamed sides adopted by ZeroMomentPointEstimator::adoptContactSide() are
@@ -76,6 +87,10 @@ public:
     //==========================================================================
     OpenSim_DECLARE_LIST_PROPERTY(contact_points, ContactPoint,
             "Contact detection points belonging to this side.");
+
+    OpenSim_DECLARE_PROPERTY(minimum_contact_duration, double,
+            "Periods of contact or no contact shorter than this (s) are "
+            "removed by createZMPLoadsFromStates(). Default -1 (unused).");
 
     //==========================================================================
     // SOCKETS
@@ -120,6 +135,13 @@ public:
     const ContactPoint& getContactPoint(const std::string& name) const;
     ContactPoint& updContactPoint(int index);
     // @}
+
+    /** Minimum duration (s) of a contact or no-contact period; -1 means
+    unused. */
+    double getMinimumContactDuration() const {
+        return get_minimum_contact_duration();
+    }
+    void setMinimumContactDuration(double duration);
 
     /** @name Contact body */
     // @{

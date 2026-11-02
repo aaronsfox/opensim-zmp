@@ -109,7 +109,14 @@ ContactSide::ContactSide(
     connectSocket_contact_body(contactBody);
 }
 
-void ContactSide::constructProperties() { constructProperty_contact_points(); }
+void ContactSide::constructProperties() {
+    constructProperty_contact_points();
+    constructProperty_minimum_contact_duration(-1); // -1: unused.
+}
+
+void ContactSide::setMinimumContactDuration(double duration) {
+    set_minimum_contact_duration(duration);
+}
 
 //=============================================================================
 // CONTACT POINTS
@@ -218,6 +225,14 @@ void ContactSide::extendFinalizeFromProperties() {
     OPENSIM_THROW_IF_FRMOBJ(getNumContactPoints() == 0, InvalidPropertyValue,
             getProperty_contact_points().getName(),
             "Expected at least one ContactPoint, but none were provided.");
+
+    const double duration = get_minimum_contact_duration();
+    OPENSIM_THROW_IF_FRMOBJ(duration != -1 && duration <= 0,
+            InvalidPropertyValue,
+            getProperty_minimum_contact_duration().getName(),
+            std::format("Expected minimum_contact_duration to be -1 (unused) "
+                        "or positive, but got {}.",
+                    duration));
 }
 
 //=============================================================================

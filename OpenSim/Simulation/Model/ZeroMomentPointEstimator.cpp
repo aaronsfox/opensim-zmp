@@ -296,6 +296,16 @@ ZeroMomentPointEstimator::getZMPResult(const SimTK::State& state) const {
 
 ZeroMomentPointEstimator::ZMPResult ZeroMomentPointEstimator::calcZMPResult(
         const SimTK::State& state, const SimTK::Vector& udot) const {
+    std::vector<bool> sidesInContact(getNumContactSides());
+    for (int i = 0; i < getNumContactSides(); ++i) {
+        sidesInContact[i] = get_contact_sides(i).isInContact(state);
+    }
+    return calcZMPResult(state, udot, sidesInContact);
+}
+
+ZeroMomentPointEstimator::ZMPResult ZeroMomentPointEstimator::calcZMPResult(
+        const SimTK::State& state, const SimTK::Vector& udot,
+        const std::vector<bool>& sidesInContact) const {
     OPENSIM_THROW_IF_FRMOBJ(state.getSystemStage() < SimTK::Stage::Velocity,
             Exception,
             std::format("Expected the system to be realized to "
@@ -306,14 +316,18 @@ ZeroMomentPointEstimator::ZMPResult ZeroMomentPointEstimator::calcZMPResult(
                     state.getNU(), udot.size()));
 
     const int n = getNumContactSides();
+    OPENSIM_THROW_IF_FRMOBJ(static_cast<int>(sidesInContact.size()) != n,
+            Exception,
+            std::format("Expected a contact status for each of the {} "
+                        "ContactSides, but got {}.",
+                    n, sidesInContact.size()));
     ZMPResult result;
     result.sides.resize(n, SideResult{});
 
-    // Contact detection.
     int numInContact = 0;
     int sideInContact = -1;
     for (int i = 0; i < n; ++i) {
-        const bool inContact = get_contact_sides(i).isInContact(state);
+        const bool inContact = sidesInContact[i];
         result.sides[i].isInContact = inContact;
         if (inContact) {
             ++numInContact;

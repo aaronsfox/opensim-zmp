@@ -51,6 +51,9 @@ void ContactPoint::constructProperties() {
     constructProperty_distance_threshold(0.008);
     constructProperty_velocity_threshold(0.015);
     constructProperty_contact_checking_method("distance");
+    // -1: unused (no hysteresis).
+    constructProperty_distance_off_threshold(-1);
+    constructProperty_velocity_off_threshold(-1);
 }
 
 //=============================================================================
@@ -62,6 +65,14 @@ void ContactPoint::setDistanceThreshold(double distanceThreshold) {
 
 void ContactPoint::setVelocityThreshold(double velocityThreshold) {
     set_velocity_threshold(velocityThreshold);
+}
+
+void ContactPoint::setDistanceOffThreshold(double distanceOffThreshold) {
+    set_distance_off_threshold(distanceOffThreshold);
+}
+
+void ContactPoint::setVelocityOffThreshold(double velocityOffThreshold) {
+    set_velocity_off_threshold(velocityOffThreshold);
 }
 
 void ContactPoint::setContactCheckingMethod(const std::string& method) {
@@ -117,6 +128,44 @@ void ContactPoint::extendFinalizeFromProperties() {
                             "'distance' or 'velocity', but got '{}'.",
                         method));
     }
+
+    // Hysteresis. -1 means unused; any other value must exceed the
+    // corresponding on threshold.
+    const double distanceOff = get_distance_off_threshold();
+    const double velocityOff = get_velocity_off_threshold();
+    const bool distanceOffSet = distanceOff != -1;
+    const bool velocityOffSet = velocityOff != -1;
+    OPENSIM_THROW_IF_FRMOBJ(
+            distanceOffSet && distanceOff <= get_distance_threshold(),
+            InvalidPropertyValue,
+            getProperty_distance_off_threshold().getName(),
+            std::format("Expected distance_off_threshold to be -1 (unused) or "
+                        "greater than distance_threshold ({}), but got {}.",
+                    get_distance_threshold(), distanceOff));
+    OPENSIM_THROW_IF_FRMOBJ(
+            velocityOffSet && velocityOff <= get_velocity_threshold(),
+            InvalidPropertyValue,
+            getProperty_velocity_off_threshold().getName(),
+            std::format("Expected velocity_off_threshold to be -1 (unused) or "
+                        "greater than velocity_threshold ({}), but got {}.",
+                    get_velocity_threshold(), velocityOff));
+
+    if (_contactCheckingMethod == ContactCheckingMethod::Distance) {
+        _usesHysteresis = distanceOffSet;
+        if (velocityOffSet) {
+            log_warn("ContactPoint '{}': velocity_off_threshold is only used "
+                     "by the 'velocity' method; it is ignored.",
+                    getName());
+        }
+    } else {
+        OPENSIM_THROW_IF_FRMOBJ(distanceOffSet != velocityOffSet,
+                InvalidPropertyValue,
+                getProperty_distance_off_threshold().getName(),
+                "Hysteresis with the 'velocity' method needs both "
+                "distance_off_threshold and velocity_off_threshold; set both "
+                "(or neither, to disable hysteresis).");
+        _usesHysteresis = distanceOffSet && velocityOffSet;
+    }
 }
 
 //=============================================================================
@@ -136,4 +185,17 @@ bool ContactPoint::isInContact(const SimTK::State& state) const {
     }
     return closeToGround &&
            getVelocityInGround(state).norm() < get_velocity_threshold();
+}
+
+bool ContactPoint::isInContact(
+        const SimTK::State& state, bool previouslyInContact) const {
+    if (!_usesHysteresis || !previouslyInContact) return isInContact(state);
+    // Stay in contact until the off thresholds are exceeded.
+    const bool closeToGround =
+            calcHeightAboveGround(state) < get_distance_off_threshold();
+    if (_contactCheckingMethod == ContactCheckingMethod::Distance) {
+        return closeToGround;
+    }
+    return closeToGround &&
+           getVelocityInGround(state).norm() < get_velocity_off_threshold();
 }

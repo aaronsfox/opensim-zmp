@@ -24,6 +24,7 @@
  * -------------------------------------------------------------------------- */
 
 #include <memory>
+#include <vector>
 
 #include <OpenSim/Simulation/InverseDynamicsSolver.h>
 #include <OpenSim/Simulation/Model/ContactSide.h>
@@ -284,6 +285,14 @@ public:
     realized to SimTK::Stage::Velocity. Not available through scripting. */
     ZMPResult calcZMPResult(
             const SimTK::State& state, const SimTK::Vector& udot) const;
+
+    /** As calcZMPResult(state, udot), but with each side's contact status
+    given (parallel to contact_sides) instead of detected from the state.
+    createZMPLoadsFromStates() uses this to apply contact hysteresis and
+    minimum contact durations, which depend on neighbouring frames. */
+    ZMPResult calcZMPResult(const SimTK::State& state,
+            const SimTK::Vector& udot,
+            const std::vector<bool>& sidesInContact) const;
 #endif
 
 protected:
