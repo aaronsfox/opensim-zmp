@@ -261,8 +261,8 @@ int main() {
     // are twice differentiated to get accelerations, there could be some
     // slight differences between the generated GRFs - likely dependent
     // on how smooth vs. noisy the values signals are.
-    TimeSeriesTable zmpGRFTablefromValues =
-            createZMPLoadsFromStates(model, statesTable, estimator);
+    TimeSeriesTable zmpGRFTable_fromValues =
+            createZMPLoadsFromValues(model, valuesTable, estimator);
     TimeSeriesTable zmpGRFTable_fromStates =
             createZMPLoadsFromStates(model, statesTable, estimator);
 
@@ -285,7 +285,7 @@ int main() {
         << zmpGRFFile_fromStates << "\n";
     const std::string zmpGRFFile_fromValues =
             "subject01_run3_zmp_grf_fromValues.mot";
-    STOFileAdapter::write(zmpGRFTable_fromStates, zmpGRFFile_fromValues);
+    STOFileAdapter::write(zmpGRFTable_fromValues, zmpGRFFile_fromValues);
     std::cout << "ZMP GRF table from states written to: "
               << zmpGRFFile_fromValues << "\n";
 

@@ -308,6 +308,32 @@ TimeSeriesTable createExternalLoadsTableForGait(Model model,
         const std::vector<std::string>& forcePathsRightFoot,
         const std::vector<std::string>& forcePathsLeftFoot);
 
+/// A convenience function that takes BodyWrenchActuators included to provide
+/// external loads in a Moco problem and extracts their signals into a external
+/// loads table. 
+/// Inputs include the absolute path to the BodyWrenchActuator components in the
+/// model, alongside a vertical force threshold that is used to zero any data from
+/// the actuator where it's vertical force is below this.
+/// @ingroup mocoutil
+OSIMMOCO_API
+TimeSeriesTable createExternalLoadsTableFromBodyWrenchActuators(
+        const MocoTrajectory& trajectory,
+        const std::string& rightFootActuatorPath,
+        const std::string& leftFootActuatorPath,
+        const double& verticalForceThreshold);
+
+/// A convenience function that takes Fluit2014ContactPointActuator objects included 
+/// to provide external loads in a Moco problem and extracts their signals into an
+/// external loads table. Inputs are a vector of strings to the actuator paths for
+/// the right and left feet.
+/// @ingroup mocoutil
+OSIMMOCO_API
+TimeSeriesTable createExternalLoadsTableFromContactPointActuators(
+        Model model,
+        const MocoTrajectory& trajectory,
+        const std::vector<std::string>& forcePathsRightFoot,
+        const std::vector<std::string>& forcePathsLeftFoot);
+
 /// Compute the set of generalized coordinate forces from the provided Model and 
 /// MocoTrajectory. The MocoTrajectory should be compatible with the provided 
 /// Model (e.g., generated from a MocoStudy with the same Model). Only the model

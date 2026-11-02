@@ -74,7 +74,7 @@ private:
     // Property construction
     void constructProperties();
 
-    // Implements the `ForceProducer` API by computing ZMP forces
+    // Implements the `ForceProducer` API by applying body wrench forces
     void implProduceForces(const SimTK::State&, ForceConsumer&) const override;
 
     // Implement the actuator interface

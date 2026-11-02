@@ -3,3 +3,6 @@
 [2026-07-16 16:30:11.665] [info] Old version storage/motion file encountered
 [2026-07-16 16:30:11.670] [info] Storage: read data file = C:\opensim-workspace-zmp\opensim-zmp-build\OpenSim\Examples\Moco\exampleZeroMomentPoint\Run_3_grf.mot (nr=4741 nc=19)
 [2026-07-16 16:30:11.670] [info] .. assuming rotations in Degrees..
+[2026-07-22 16:23:06.664] [info] Updating Model file from 40000 to latest format...
+[2026-07-22 16:23:06.803] [info] Loaded model subject01_scaled from file C:\opensim-workspace-zmp\opensim-zmp\OpenSim\Examples\Moco\exampleZeroMomentPoint\subject01_run3.osim
+[2026-07-22 16:23:17.549] [info] Storage: read data file = C:\opensim-workspace-zmp\opensim-zmp\OpenSim\Examples\Moco\exampleZeroMomentPoint\subject01_run3_states.sto (nr=101 nc=59)

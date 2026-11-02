@@ -312,6 +312,14 @@ TimeSeriesTable OpenSim::createZMPLoadsFromValues(const Model& model,
         statesTable.appendRow(currentTime, combinedRow);
     }
 
+    // Set table metadata. Seems necessary for states function to work
+    statesTable.updTableMetaData().setValueForKey(
+            "inDegrees", std::string("no"));
+    statesTable.updTableMetaData().setValueForKey(
+            "nRows", std::to_string(nRows));
+    statesTable.updTableMetaData().setValueForKey("nColumns",
+            std::to_string(statesLabels.size() + 1)); // +1 for time column
+
     // Pass states table to ZMP loads function
     TimeSeriesTable table =
             createZMPLoadsFromStates(model, statesTable, estimator);

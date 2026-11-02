@@ -114,6 +114,10 @@ set(MOCO_SOURCES
         MocoContactPointConstraint.h
 		MocoZeroMomentPointConstraint.cpp
         MocoZeroMomentPointConstraint.h
+		MocoWrenchContactPointConstraint.cpp
+        MocoWrenchContactPointConstraint.h
+		MocoGoal/MocoWrenchPointProximityGoal.h
+		MocoGoal/MocoWrenchPointProximityGoal.cpp
         )
 if(OPENSIM_WITH_CASADI)
     list(APPEND MOCO_SOURCES

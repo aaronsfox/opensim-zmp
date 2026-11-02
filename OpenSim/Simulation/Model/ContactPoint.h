@@ -59,7 +59,7 @@ public:
         "with another frame. Default is 0.08 m.");
 	
 	OpenSim_DECLARE_PROPERTY(velocity_threshold, double,
-        "Vertical height (m) below which the point is considered in contact "
+        "Velocity (m/s) below which the point is considered in contact "
         "with the ground plane. Default is 1.5 m/s.");
 		
 	OpenSim_DECLARE_PROPERTY(contact_checking_method, std::string,

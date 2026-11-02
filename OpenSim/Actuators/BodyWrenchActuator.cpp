@@ -27,7 +27,7 @@ BodyWrenchActuator::BodyWrenchActuator(const std::string& name,
 
 /** Property construction */
 void BodyWrenchActuator::constructProperties() {
-    setName("zmp_force");
+    setName("body_wrench_actuator");
     constructProperty_contact_body_name("");
 }
 

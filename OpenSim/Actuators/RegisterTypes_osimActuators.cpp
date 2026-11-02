@@ -60,6 +60,8 @@ OSIMACTUATORS_API void RegisterTypes_osimActuators()
     Object::registerType( McKibbenActuator() );
 	
 	Object::registerType( BodyWrenchActuator() );
+	Object::registerType( BodyWrenchSmoothContactActuator() );
+	Object::registerType( Fluit2014ContactPointActuator() );
 
     Object::registerType( Thelen2003Muscle() );
     Object::registerType( Thelen2003Muscle_Deprecated() );

@@ -33,6 +33,8 @@
 #include "ClutchedPathSpring.h"
 
 #include "BodyWrenchActuator.h"
+#include "BodyWrenchSmoothContactActuator.h"
+#include "Fluit2014ContactPointActuator.h"
 
 #include "Schutte1993Muscle_Deprecated.h"
 #include "Delp1990Muscle_Deprecated.h"

@@ -23,7 +23,7 @@ set(EXAMPLE_MOCOZMP_FILES
 OpenSimAddExampleCXX(
     NAME        exampleZeroMomentPoint
     SUBDIR      Moco
-    EXECUTABLES exampleZeroMomentPoint
+    EXECUTABLES exampleBodyWrenchActuator exampleContactPointActuator
     RESOURCES   "${EXAMPLE_MOCOZMP_FILES}")
  
 # Copy data files to the build tree so the executable can find them

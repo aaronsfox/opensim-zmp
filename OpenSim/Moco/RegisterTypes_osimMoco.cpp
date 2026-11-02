@@ -28,6 +28,7 @@
 #include "MocoFrameDistanceConstraint.h"
 #include "MocoContactPointConstraint.h"
 #include "MocoZeroMomentPointConstraint.h"
+#include "MocoWrenchContactPointConstraint.h"
 #include "MocoGoal/MocoAccelerationTrackingGoal.h"
 #include "MocoGoal/MocoAngularVelocityTrackingGoal.h"
 #include "MocoGoal/MocoContactImpulseTrackingGoal.h"
@@ -51,6 +52,7 @@
 #include "MocoGoal/MocoSumSquaredStateGoal.h"
 #include "MocoGoal/MocoTranslationTrackingGoal.h"
 #include "MocoGoal/MocoGeneralizedForceTrackingGoal.h"
+#include "MocoGoal/MocoWrenchPointProximityGoal.h"
 #include "MocoInverse.h"
 #include "MocoParameter.h"
 #include "MocoProblem.h"
@@ -110,6 +112,8 @@ OSIMMOCO_API void RegisterTypes_osimMoco() {
         Object::registerType(MocoPhase());
         Object::registerType(MocoProblem());
         Object::registerType(MocoStudy());
+		
+		Object::registerType(MocoWrenchPointProximityGoal());
 
         Object::registerType(MocoInverse());
         Object::registerType(MocoTrack());
@@ -122,6 +126,7 @@ OSIMMOCO_API void RegisterTypes_osimMoco() {
 
 		Object::registerType(MocoContactPointConstraint());
 		Object::registerType(MocoZeroMomentPointConstraint());
+		Object::registerType(MocoWrenchContactPointConstraint());
 
         Object::registerType(MocoCasADiSolver());
 

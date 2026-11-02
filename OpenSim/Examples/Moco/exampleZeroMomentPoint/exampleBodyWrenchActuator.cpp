@@ -1,8 +1,9 @@
 /* -------------------------------------------------------------------------- *
- *            OpenSim: exampleZeroMomentPoint.cpp                             *
+ *            OpenSim: exampleBodyWrenchActuator.cpp                          *
  * -------------------------------------------------------------------------- *
  * Demonstrates the use of the ZeroMomentPointEstimator alongside the         *
- * various created Moco constraints to run different Moco problems.           *
+ * various created Moco constraints to run different Moco problems, while     *
+ * using the BodyWrenchActuator class to generate the external forces.        *
  *                                                                            *
  * Please review the associated README.MD file for example specific details.  *
  *                                                                            *
@@ -13,13 +14,31 @@
 #include <OpenSim/Actuators/ModelOperators.h>
 #include <OpenSim/Moco/osimMoco.h>
 #include <OpenSim/Moco/MocoZeroMomentPointConstraint.h>
+#include <OpenSim/Moco/MocoWrenchContactPointConstraint.h>
 #include <OpenSim/Common/STOFileAdapter.h>
 #include <OpenSim/Simulation/Model/ZeroMomentPointEstimator.h>
-#include <OpenSim/Actuators/BodyWrenchActuator.h>
+//#include <OpenSim/Actuators/BodyWrenchActuator.h>
+#include <OpenSim/Actuators/BodyWrenchSmoothContactActuator.h>
+#include <OpenSim/Moco/MocoUtilities.h>
+
+// NOTES:
+    // > Converting polygon to centroid distance constraint seems to go OK without tracking
+        // > This was with setting the guess though, try without...
+        // > Converges to that weird floating solution again...
+    // > Need an actuator penalty or constraint for forces off the ground...
 
 // TODO: configure more generally to run different Moco elements
     // > Muscle-driven simulations don't seem to be working well/tuned nicely?
     // > Consider periodicity constraints?
+    // > WrenchActuator point most likely needs to be constrained to base of support...
+        // > Converges pretty well with polygon constraint + guess
+        // What about without guess?
+            // Taking away guess never works well
+    // Perhaps ZMP constraint needs to be a tracking goal to get a good simulation?
+        // And then a constraint in predictive?
+        // But thn bad kinematics = bad ZMP, so needs to be a cosntraint
+    // Needs something that drives initial guess to be better...
+    // Constraint is kind of not ideal as it doesn't align with ZMP constraint well?
 
 using namespace OpenSim;
 
@@ -61,6 +80,7 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
         modelProcessor.append(ModOpReplaceMusclesWithDeGrooteFregly2016());
         modelProcessor.append(ModOpIgnorePassiveFiberForcesDGF());
         modelProcessor.append(ModOpScaleActiveFiberForceCurveWidthDGF(1.5));
+        // TODO: this needs reserves and residuals...
     } else {
         // Remove muscles
         modelProcessor.append(ModOpRemoveMuscles());
@@ -100,13 +120,6 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     double finalTime = 1.231;
     track.set_initial_time(initialTime);
     track.set_final_time(finalTime);
-    if (muscleDriven) {
-        // Use a longer mesh interval to speed up computation
-        track.set_mesh_interval(0.03);
-    } else {
-        track.set_mesh_interval(0.01);
-    }
-    
 
     // Apply tracked states to guess
     track.set_apply_tracked_states_to_guess(true);
@@ -115,9 +128,14 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     // the speed. Let the optimization determine the vertical position of the
     // model, which will make it easier to find the position of the feet that
     // leads to the best tracking of the kinematics and ground reaction forces.
+
+    // TODO: lightly track --- not tracking gives odd solution with no GRF initial guess...
+    // Still doesn't work great without good initial guess...
+        // This was without polygon support constraint though...
+
     MocoWeightSet statesWeightSet;
     statesWeightSet.cloneAndAppend(
-            {"/jointset/ground_pelvis/pelvis_ty/value", 0.0});
+            {"/jointset/ground_pelvis/pelvis_ty/value", 0.1}); // TODO: set to 0.0 if not wanting to track pelvis_ty...
     statesWeightSet.cloneAndAppend(
             {"/jointset/ground_pelvis/pelvis_ty/speed", 0.1});
     track.set_states_weight_set(statesWeightSet);
@@ -143,6 +161,10 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     effort.setWeightForControlPattern("/forceset/force_r_.*", 0.0);
     effort.setWeightForControlPattern("/forceset/force_l_.*", 0.0);
 
+    // TODO: would these bounds still be relevant given the new actuator formulation?
+    // Can tey be constrained if they need to follow the centroid?
+    // Testing with y == 0
+    
     // Define the optimisation bounds for the body actuator inputs
     // Restrict bounds to reasonable values for force, COP and torque
     // Note that these are reasonable for the experimental data included
@@ -156,11 +178,11 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     problem.setControlInfo(
             "/forceset/force_r_2", MocoBounds(-75.0, 75.0)); // Fz
     // Center of Pressure channels (3, 4, 5)
-    problem.setControlInfo(
-            "/forceset/force_r_3", MocoBounds(0.0, 2.0));           // CoP x
+    //problem.setControlInfo(
+    //        "/forceset/force_r_3", MocoBounds(0.0, 2.0));           // CoP x
     problem.setControlInfo("/forceset/force_r_4", MocoBounds(0.0)); // CoP y
-    problem.setControlInfo(
-            "/forceset/force_r_5", MocoBounds(-1.0, 0.0)); // CoP z
+    //problem.setControlInfo(
+    //        "/forceset/force_r_5", MocoBounds(-1.0, 0.0)); // CoP z
     // Torque/Moment channels (6, 7, 8)
     problem.setControlInfo("/forceset/force_r_6", MocoBounds(0.0)); // Mx
     problem.setControlInfo(
@@ -175,11 +197,11 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     problem.setControlInfo(
             "/forceset/force_l_2", MocoBounds(-75.0, 75.0)); // Fz
     // Center of Pressure channels (3, 4, 5)
-    problem.setControlInfo(
-            "/forceset/force_l_3", MocoBounds(0.0, 2.0));           // CoP x
+    //problem.setControlInfo(
+    //        "/forceset/force_l_3", MocoBounds(0.0, 2.0));           // CoP x
     problem.setControlInfo("/forceset/force_l_4", MocoBounds(0.0)); // CoP y
-    problem.setControlInfo(
-            "/forceset/force_l_5", MocoBounds(-1.0, 0.0)); // CoP z
+    //problem.setControlInfo(
+    //        "/forceset/force_l_5", MocoBounds(-1.0, 0.0)); // CoP z
     // Torque/Moment channels (6, 7, 8)
     problem.setControlInfo("/forceset/force_l_6", MocoBounds(0.0)); // Mx
     problem.setControlInfo(
@@ -194,6 +216,7 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     // Add each contact point by its absolute path in the model tree.
     // The path follows: /<estimator_name>/<side_name>/<point_name>
     // Right side contact points
+    // TODO: should this should be edited to just take point locations rather than needing ZMP object?
     groundContactConstraint->addContactPointPath(
             "/zmp_grf_estimator/right_side/contact_point_RCAL");
     groundContactConstraint->addContactPointPath(
@@ -223,10 +246,11 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     // Add and configure the ZMP path constraint
     auto* zmpConstraint = problem.addPathConstraint<MocoZeroMomentPointConstraint>();
     zmpConstraint->setName("zmp_ground_reactions_constraint");
-    zmpConstraint->set_zmp_estimator_path("/zmp_grf_estimator");
-    zmpConstraint->append_body_wrench_paths("/forceset/force_r");
-    zmpConstraint->append_body_wrench_paths("/forceset/force_l");
+    zmpConstraint->setZeroMomentPointEstimatorPath("/zmp_grf_estimator");
+    zmpConstraint->addActuatorPath("/forceset/force_r");
+    zmpConstraint->addActuatorPath("/forceset/force_l");
 
+    // TODO: this structure of path constraint is no longer accurate...
     // The path constraint manages 2 actuators * 3 equations = 6 equations total.
     // The below code demonstrates an option to set potential bounds for these 
     // constraints. However, without setting bounds this should essentially try
@@ -242,6 +266,38 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     //    zmpConstraintBounds.emplace_back(-1.0, 1.0);
     //}
     //zmpConstraint->updConstraintInfo().setBounds(zmpConstraintBounds);
+
+    // Constraint potentially works better than proximity goal --- needed?
+
+    //// Add and configure the COP point constraints for wrench actuators
+    //// Right side
+    //auto* rightPointConstraint =
+    //        problem.addPathConstraint<MocoWrenchContactPointConstraint>();
+    //rightPointConstraint->setName("right_point_constraint");
+    //rightPointConstraint->setActuatorPath("/forceset/force_r");
+    //rightPointConstraint->setDistanceTolerance(
+    //    SimTK::Vec3(0.05,0.01,0.05)); 
+    //rightPointConstraint->setBigM(0.2); // TODO: must be low given it's relevant to max distance
+    //// Left side
+    //auto* leftPointConstraint =
+    //        problem.addPathConstraint<MocoWrenchContactPointConstraint>();
+    //leftPointConstraint->setName("left_polygon_constraint");
+    //leftPointConstraint->setActuatorPath("/forceset/force_l");
+    //leftPointConstraint->setDistanceTolerance(
+    //        SimTK::Vec3(0.05, 0.01, 0.05));
+    //leftPointConstraint->setBigM(0.2); // TODO: must be low given it's relevant to max distance
+
+    //// Try point proximity goal instead of constraint
+    //// TODO: currrently using generic weights...
+    //auto* rightProximity = problem.addGoal<MocoWrenchPointProximityGoal>(
+    //        "right_contact_proximity");
+    //rightProximity->setActuatorPath("/forceset/force_r");
+    //rightProximity->setAxisWeights(SimTK::Vec3(1.0, 1.0, 1.0));
+    //rightProximity->setWeight(1.0);
+    //auto* leftProximity = problem.addGoal<MocoWrenchPointProximityGoal>(
+    //        "left_contact_proximity");
+    //leftProximity->setActuatorPath("/forceset/force_l");
+    //leftProximity->setWeight(1.0);
 
     // As the body actuators include the force, point and torque as control signals
     // we can essentially replicate GRF contact tracking through a control tracking
@@ -282,8 +338,32 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
         // Set reference table as the experimental GRF data
         grfTrackGoal->setReference(TableProcessor("Run_3_grf.mot"));
         // Loop through and set the reference labels for tracking
+        // Create a weight set that scales force, point and torque data
+        // more reasonably.
         for (const auto& mapping : grfMappings) {
+            // Set the reference labels
             grfTrackGoal->setReferenceLabel(mapping.first, mapping.second);
+            // Set weight for control based on control signal
+            const char lastChar = mapping.first.back();
+            double weight = 1.0;
+            switch (lastChar) {
+            case '0':
+            case '1':
+            case '2':
+                weight = 1e-4; // force channels
+                break;
+            case '3':
+            case '4':
+            case '5':
+                weight = 1.0; // position (CoP) channels
+                break;
+            case '6':
+            case '7':
+            case '8':
+                weight = 1e-3; // torque channels
+                break;
+            }
+            grfTrackGoal->setWeightForControl(mapping.first, weight);
         }
         // Customize tracking weights and behavior
         grfTrackGoal->setWeight(0.1);
@@ -320,53 +400,67 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     // Customise the solver settings
     // ------------------------------
     auto& solver = study.updSolver<MocoCasADiSolver>();
-    solver.set_transcription_scheme("legendre-gauss-radau-3"); // TODO: use this? Need to update guess if doing?
+    solver.set_transcription_scheme("legendre-gauss-radau-3");
     solver.set_optim_convergence_tolerance(1e-3);
-    solver.set_optim_constraint_tolerance(1e-4);
+    solver.set_optim_constraint_tolerance(1e-0);  // TODO: loosened with new constraint testing...
+    if (muscleDriven) {
+        solver.set_num_mesh_intervals(20);
+    } else {
+        solver.set_num_mesh_intervals(25);
+    }
     solver.resetProblem(problem);
 
-    // Grab guess to update control signals with GRF values
-    // This should theoretically improve the initial guess
-    MocoTrajectory guess = solver.getGuess();
+    // Commenting out setting GRF into guess to see how well this works without it...
+    // TODO: not well...
+        // What about just point in initial guess?
+            // If it works then just test mid-point of contact points...
 
-    // Read the ground reaction force file
-    TimeSeriesTable grfTable("Run_3_grf.mot");
+    //// Grab guess to update control signals with GRF values
+    //// This should theoretically improve the initial guess
+    //MocoTrajectory guess = solver.getGuess();
 
-    // Trim the GRF data to the desired times
-    grfTable.trim(initialTime, finalTime);
+    //// Read the ground reaction force file
+    //TimeSeriesTable grfTable("Run_3_grf.mot");
 
-    // Resample the guess to match the GRF times
-    guess.resampleWithNumTimes(grfTable.getNumRows());
-    
-    // Populate actuator control trajectories in guess
-    // This uses earlier created mappings
-    for (const auto& mapping : grfMappings) {
-        // Get the relevant experimental data
-        SimTK::Vector expData = grfTable.getDependentColumn(mapping.second);
-        // Set the control signal in the guess to match
-        guess.setControl(mapping.first, expData);
-    }
+    //// Trim the GRF data to the desired times
+    //grfTable.trim(initialTime, finalTime);
 
-    // Set guess in solver using file
-    solver.setGuess(guess);
-    
-    //// Reset problem before solving
-    //solver.resetProblem(problem);
-
-    //// Print problem for reference
-    //if (trackGRF) {
-    //    problem.print("states-grf_tracking-problem_with-zmp.omoco"); 
-    //} else {
-    //    problem.print("states-only_tracking-problem_with-zmp.omoco"); 
+    //// Resample the guess to match the GRF times
+    //guess.resampleWithNumTimes(grfTable.getNumRows());
     //
+    //// Populate actuator control trajectories in guess
+    //// This uses earlier created mappings
+    ////for (const auto& mapping : grfMappings) {
+    ////    // Only use point in guess
+    ////    if (mapping.second.find("_p") != std::string::npos) {
+    ////        // Get the relevant experimental data
+    ////        SimTK::Vector expData = grfTable.getDependentColumn(mapping.second);
+    ////        // Set the control signal in the guess to match
+    ////        guess.setControl(mapping.first, expData);
+    ////    }
+    ////}
+    //for (const auto& mapping : grfMappings) {
+    //    // Get the relevant experimental data
+    //    SimTK::Vector expData = grfTable.getDependentColumn(mapping.second);
+    //    // Set the control signal in the guess to match
+    //    guess.setControl(mapping.first, expData);
     //}
+
+    //// Set guess in solver using file
+    //solver.setGuess(guess);
+    
+    // Reset problem before solving
+    solver.resetProblem(problem);
+
+    // Print problem for reference
+    problem.print(fmt::format("{}_problem.omoco", study_name));
 
     // Solve!
     // ------------------------------
     MocoSolution solution = study.solve();
     
     // Write solution to file
-    // Note that this won't work if the problem doesn't solver properly
+    if (solution.isSealed()) { solution.unseal(); }
     solution.write(fmt::format("{}_solution.sto", study_name));
 
     // TODO: configure these appropriately...
@@ -375,31 +469,39 @@ void runTrackingStudy(Model model, bool muscleDriven, bool trackGRF) {
     modelSolution.initSystem();
     modelSolution.print(fmt::format("{}_model.osim", study_name));
 
-    // We can extract the ground reactions from the actuators in the problem
-    // Export to a controls table
-    TimeSeriesTable controlsTable = solution.exportToControlsTable();
-    // Delete any columns that aren't in the GRF mappings list
-    // Create a label map
-    std::map<std::string, std::string> labelMap;
-    for (const auto& mapping : grfMappings) {
-        labelMap[mapping.first] = mapping.second;
-    }
-    // Get column labels to lookup
-    auto columnLabels = controlsTable.getColumnLabels();
-    // Loop backwards to avoid indexing issues
-    for (int i = static_cast<int>(columnLabels.size()) - 1; i >= 0; --i) {
-        const std::string& currentLabel = columnLabels[i];
-        auto it = labelMap.find(currentLabel);
-        if (it != labelMap.end()) {
-            // If found, rename the column using its index and the paired value
-            controlsTable.setColumnLabel(i, it->second);
-        } else {
-            // If not found, remove the column from the table
-            controlsTable.removeColumn(currentLabel);
-        }
-    }
+    //// We can extract the ground reactions from the actuators in the problem
+    //// Export to a controls table
+    //TimeSeriesTable controlsTable = solution.exportToControlsTable();
+    //// Delete any columns that aren't in the GRF mappings list
+    //// Create a label map
+    //std::map<std::string, std::string> labelMap;
+    //for (const auto& mapping : grfMappings) {
+    //    labelMap[mapping.first] = mapping.second;
+    //}
+    //// Get column labels to lookup
+    //auto columnLabels = controlsTable.getColumnLabels();
+    //// Loop backwards to avoid indexing issues
+    //for (int i = static_cast<int>(columnLabels.size()) - 1; i >= 0; --i) {
+    //    const std::string& currentLabel = columnLabels[i];
+    //    auto it = labelMap.find(currentLabel);
+    //    if (it != labelMap.end()) {
+    //        // If found, rename the column using its index and the paired value
+    //        controlsTable.setColumnLabel(i, it->second);
+    //    } else {
+    //        // If not found, remove the column from the table
+    //        controlsTable.removeColumn(currentLabel);
+    //    }
+    //}
+    
+    // Use utility function to extract body wrench actuator signals as external loads
+    TimeSeriesTable exLoadsTable =
+            createExternalLoadsTableFromBodyWrenchActuators(solution, 
+                "/forceset/force_r", "/forceset/force_l",
+                20.0
+            );
+
     // Write to file
-    STOFileAdapter::write(controlsTable,
+    STOFileAdapter::write(exLoadsTable,
         fmt::format("{}_ground_reactions.sto", study_name));
 
 } // end of runTrackingProblem()
@@ -744,7 +846,7 @@ int main() {
         // Build the contact point
         ContactPoint* cp = new ContactPoint(
                 "contact_point_" + contactName, calcn_r, pointLocation);
-        cp->set_distance_threshold(0.04);
+        cp->set_distance_threshold(0.01);  // TODO: altered much lower to suit constraint?
         cp->set_contact_checking_method("distance");
         // Add the contact point to the contact side
         rightContactSide->addContactPoint(cp);
@@ -760,7 +862,7 @@ int main() {
         // Build the contact point
         ContactPoint* cp = new ContactPoint(
                 "contact_point_" + contactName, calcn_l, pointLocation);
-        cp->set_distance_threshold(0.04);
+        cp->set_distance_threshold(0.01);  // TODO: altered much lower to suit polygon?
         cp->set_contact_checking_method("distance");
         // Add the contact point to the contact side
         leftContactSide->addContactPoint(cp);
@@ -773,9 +875,38 @@ int main() {
     // Add estimator component to model
     model.addComponent(zmp);
 
-    // Configure and add actuators to generate external loads
-    auto* rightForce = new BodyWrenchActuator("force_r", "calcn_r");
-    auto* leftForce = new BodyWrenchActuator("force_l", "calcn_l");
+    //// Configure and add actuators to generate external loads
+    //auto* rightForce = new BodyWrenchActuator("force_r", "calcn_r");
+    //auto* leftForce = new BodyWrenchActuator("force_l", "calcn_l");
+    //model.addForce(rightForce);
+    //model.addForce(leftForce);
+
+    // Configure and add smooth wrench actuators to generate external loads
+    // Right side
+    auto* rightForce = new BodyWrenchSmoothContactActuator("force_r", "calcn_r");
+    rightForce->addContactPoint(
+            "/zmp_grf_estimator/right_side/contact_point_RCAL");
+    rightForce->addContactPoint(
+            "/zmp_grf_estimator/right_side/contact_point_RTOE");
+    rightForce->addContactPoint(
+            "/zmp_grf_estimator/right_side/contact_point_RMT5");
+    rightForce->addContactPoint(
+            "/zmp_grf_estimator/right_side/contact_point_RTOE_mid");
+    rightForce->addContactPoint(
+            "/zmp_grf_estimator/right_side/contact_point_R_end");
+    // Left side
+    auto* leftForce = new BodyWrenchSmoothContactActuator("force_l", "calcn_l");
+    leftForce->addContactPoint(
+            "/zmp_grf_estimator/left_side/contact_point_LCAL");
+    leftForce->addContactPoint(
+            "/zmp_grf_estimator/left_side/contact_point_LTOE");
+    leftForce->addContactPoint(
+            "/zmp_grf_estimator/left_side/contact_point_LMT5");
+    leftForce->addContactPoint(
+            "/zmp_grf_estimator/left_side/contact_point_LTOE_mid");
+    leftForce->addContactPoint(
+            "/zmp_grf_estimator/left_side/contact_point_L_end");
+    // Add forces
     model.addForce(rightForce);
     model.addForce(leftForce);
 
@@ -795,16 +926,16 @@ int main() {
     // ======================================================================
     printSection("Step 3. Running torque-driven states only tracking example");
 
-    //// Solve the torque-driven states tracking problem with no GRF tracking
-    //runTrackingStudy(model, false, false);
+    // Solve the torque-driven states tracking problem with no GRF tracking
+    runTrackingStudy(model, false, false);
 
     // ======================================================================
     // STEP 4: Run a muscle-driven tracking simulation with GRF tracking
     // ======================================================================
     printSection("Step 4. Running muscle-driven states & GRF tracking example");
 
-    // Solve the torque-driven states tracking problem with no GRF tracking
-    runTrackingStudy(model, true, true);
+    //// Solve the torque-driven states tracking problem with no GRF tracking
+    //runTrackingStudy(model, true, true);
 
     //// Solve the torque-driven predictive problem.
     //runPredictiveProblem();

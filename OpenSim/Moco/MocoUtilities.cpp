@@ -415,6 +415,197 @@ TimeSeriesTable OpenSim::createExternalLoadsTableForGait(Model model,
             forcePathsRightFoot, forcePathsLeftFoot);
 }
 
+TimeSeriesTable OpenSim::createExternalLoadsTableFromBodyWrenchActuators(
+    const MocoTrajectory& trajectory,
+    const std::string& rightFootActuatorPath,
+    const std::string& leftFootActuatorPath, 
+    const double& verticalForceThreshold) {
+
+    // Initialise the external forces table
+    TimeSeriesTableVec3 externalForcesTable;
+
+    // Export the trajectory controls table for easy access
+    TimeSeriesTable controls = trajectory.exportToControlsTable();
+
+    // Loop through the rows in the Moco trajectory
+    for (int i = 0; i < trajectory.getNumTimes(); ++i) {
+
+        // Get the time at current row
+        double t = trajectory.getTime()[i];
+
+        // Initialise variables
+        SimTK::Vec3 R_force(0.0);
+        SimTK::Vec3 R_point(0.0);
+        SimTK::Vec3 R_torque(0.0);
+        SimTK::Vec3 L_force(0.0);
+        SimTK::Vec3 L_point(0.0);
+        SimTK::Vec3 L_torque(0.0);
+
+        // Extract the force, point and torque signals from the actuators
+        // Check if this is necessary based on vertical force threshold
+        // Right side
+        if (controls.getDependentColumn(rightFootActuatorPath + "_1")[i] >
+                verticalForceThreshold) {
+            R_force = SimTK::Vec3(controls.getDependentColumn(
+                                          rightFootActuatorPath + "_0")[i],
+                    controls.getDependentColumn(
+                            rightFootActuatorPath + "_1")[i],
+                    controls.getDependentColumn(
+                            rightFootActuatorPath + "_2")[i]);
+            R_point = SimTK::Vec3(controls.getDependentColumn(
+                                          rightFootActuatorPath + "_3")[i],
+                    controls.getDependentColumn(
+                            rightFootActuatorPath + "_4")[i],
+                    controls.getDependentColumn(
+                            rightFootActuatorPath + "_5")[i]);
+            R_torque = SimTK::Vec3(controls.getDependentColumn(
+                                           rightFootActuatorPath + "_6")[i],
+                    controls.getDependentColumn(
+                            rightFootActuatorPath + "_7")[i],
+                    controls.getDependentColumn(
+                            rightFootActuatorPath + "_8")[i]);
+        }
+        // Left side
+        if (controls.getDependentColumn(leftFootActuatorPath + "_1")[i] >
+                verticalForceThreshold) {
+            L_force = SimTK::Vec3(
+                    controls.getDependentColumn(leftFootActuatorPath + "_0")[i],
+                    controls.getDependentColumn(leftFootActuatorPath + "_1")[i],
+                    controls.getDependentColumn(
+                            leftFootActuatorPath + "_2")[i]);
+            L_point = SimTK::Vec3(
+                    controls.getDependentColumn(leftFootActuatorPath + "_3")[i],
+                    controls.getDependentColumn(leftFootActuatorPath + "_4")[i],
+                    controls.getDependentColumn(
+                            leftFootActuatorPath + "_5")[i]);
+            L_torque = SimTK::Vec3(
+                    controls.getDependentColumn(leftFootActuatorPath + "_6")[i],
+                    controls.getDependentColumn(leftFootActuatorPath + "_7")[i],
+                    controls.getDependentColumn(
+                            leftFootActuatorPath + "_8")[i]);
+        }
+
+        // Append row to table.
+        SimTK::RowVector_<SimTK::Vec3> row(6);
+        row(0) = R_force;
+        row(1) = R_point;
+        row(2) = L_force;
+        row(3) = L_point;
+        row(4) = R_torque;
+        row(5) = L_torque;
+        externalForcesTable.appendRow(t, row);
+
+    }
+
+    // Create table and flatten for export
+    std::vector<std::string> labels{"ground_force_r_v", "ground_force_r_p",
+        "ground_force_l_v", "ground_force_l_p", "ground_torque_r_",
+        "ground_torque_l_"};
+    externalForcesTable.setColumnLabels(labels);
+    TimeSeriesTable externalForcesTableFlat =
+            externalForcesTable.flatten({"x", "y", "z"});
+
+    // Return flattened table
+    return externalForcesTableFlat;
+
+}
+
+TimeSeriesTable OpenSim::createExternalLoadsTableFromContactPointActuators(
+        Model model,
+        const MocoTrajectory& trajectory,
+        const std::vector<std::string>& forcePathsRightFoot,
+        const std::vector<std::string>& forcePathsLeftFoot) {
+
+    // Initialise model state
+    SimTK::State state = model.initSystem();
+
+    // Get relevant trajetory components
+    SimTK::Vector time = trajectory.getTime();
+    TimeSeriesTable statesTable = trajectory.exportToStatesTable();
+    //StatesTrajectory statesTraj = trajectory.exportToStatesTrajectory(model);
+    std::vector<std::string> stateNames = trajectory.getStateNames();
+    TimeSeriesTable controlsTable = trajectory.exportToControlsTable();
+    std::vector<std::string> controlNames = trajectory.getControlNames();
+
+    // Initialise the external forces table
+    TimeSeriesTableVec3 externalForcesTable;
+    
+    // Loop through the states trajectory
+    for (int i = 0; i < time.size(); ++i) {
+
+        // Set time
+        state.setTime(time[i]);
+
+        // Set state variable values for this row, by name (robust to any
+        // difference in column ordering between the trajectory and model).
+        for (int j = 0; j < (int)stateNames.size(); ++j) {
+            model.setStateVariableValue(state, stateNames[j], 
+                statesTable.getDependentColumn(stateNames[j])[i]
+            );
+        }
+
+        // Initial realisation of state for setting controls
+        model.realizeDynamics(state);
+
+        // Create a vector of controls from current time
+        SimTK::Vector& controls = model.updControls(state);
+        for (int j = 0; j < (int)controlNames.size(); ++j) {
+            controls[j] = controlsTable.getDependentColumn(controlNames[j])[i];
+        }
+
+        // Set controls in model
+        model.setControls(state, controls); 
+
+        // Realize model to state
+        model.realizeAcceleration(state);
+           
+        // Initialize variables for values
+        SimTK::Vec3 forcesRight(0.0);
+        SimTK::Vec3 forcesLeft(0.0);
+
+        // Loop through actuators on the right side
+        for (const auto& actuator : forcePathsRightFoot) {
+            Array<double> forceValues = 
+                model.getComponent<Force>(actuator).getRecordValues(state);
+            forcesRight += SimTK::Vec3(forceValues[0], forceValues[1], forceValues[2]);
+        }
+
+        // Loop through actuators on the left side
+        for (const auto& actuator : forcePathsLeftFoot) {
+            Array<double> forceValues =
+                    model.getComponent<Force>(actuator).getRecordValues(state);
+            forcesLeft += SimTK::Vec3(forceValues[0], forceValues[1], forceValues[2]);
+        }
+
+        // TODO: add COP and torque calculations
+
+        // Append row to table
+        // TODO: add other components
+        SimTK::RowVector_<SimTK::Vec3> row(2);
+        row(0) = forcesRight;
+        row(1) = forcesLeft;
+        externalForcesTable.appendRow(state.getTime(), row);
+
+    }
+
+    // Create table.
+    std::vector<std::string> labels{
+        "ground_force_r_v", 
+        //"ground_force_r_p",
+        "ground_force_l_v", 
+        //"ground_force_l_p", 
+        //"ground_torque_r_",
+        //"ground_torque_l_"
+    };
+    externalForcesTable.setColumnLabels(labels);
+    TimeSeriesTable externalForcesTableFlat =
+            externalForcesTable.flatten({"x", "y", "z"});
+
+    // Return flattened table
+    return externalForcesTableFlat;
+
+}
+
 TimeSeriesTable OpenSim::calcGeneralizedForces(Model model,
         const MocoTrajectory& trajectory,
         const std::vector<std::string>& forcePaths) {
