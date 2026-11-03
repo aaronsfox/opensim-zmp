@@ -33,6 +33,7 @@
 #include "MocoGoal/MocoAngularVelocityTrackingGoal.h"
 #include "MocoGoal/MocoContactImpulseTrackingGoal.h"
 #include "MocoGoal/MocoContactTrackingGoal.h"
+#include "MocoGoal/MocoContactPenaltyGoal.h"
 #include "MocoGoal/MocoControlGoal.h"
 #include "MocoGoal/MocoControlTrackingGoal.h"
 #include "MocoGoal/MocoExpressionBasedParameterGoal.h"

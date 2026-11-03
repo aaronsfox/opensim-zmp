@@ -55,6 +55,8 @@ OSIMACTUATORS_API void RegisterTypes_osimActuators()
     Object::registerType( PointActuator() );
     Object::registerType( TorqueActuator() );
     Object::registerType( BodyActuator() );
+    Object::registerType( ContactSidePointActuator() );
+    Object::registerType( ContactSideWrenchActuator() );
     Object::registerType( PointToPointActuator() );
     Object::registerType( ClutchedPathSpring() );
     Object::registerType( McKibbenActuator() );

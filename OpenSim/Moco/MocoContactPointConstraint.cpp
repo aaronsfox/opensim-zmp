@@ -26,6 +26,8 @@
 #include <algorithm>
 #include <format>
 
+#include <OpenSim/Actuators/ContactSideActuator.h>
+#include <OpenSim/Actuators/ContactSideWrenchActuator.h>
 #include <OpenSim/Simulation/Model/ContactSide.h>
 #include <OpenSim/Simulation/Model/Model.h>
 
@@ -39,6 +41,8 @@ void MocoContactPointConstraint::constructProperties() {
     constructProperty_contact_point_paths();
     constructProperty_contact_side_paths();
     constructProperty_penetration_tolerance(0.0);
+    constructProperty_enforce_contact_complementarity(false);
+    constructProperty_complementarity_tolerance(3e-4);
 }
 
 void MocoContactPointConstraint::initializeOnModelImpl(
@@ -83,25 +87,86 @@ void MocoContactPointConstraint::initializeOnModelImpl(
         }
     }
 
-    // One equation per point: height above ground >= -tolerance.
-    const int numPoints = static_cast<int>(m_points.size());
-    MocoConstraintInfo info = getConstraintInfo();
-    // Label each equation "<constraint name>_<point name>".
-    info.setName(getName());
-    info.setBounds(std::vector<MocoBounds>(numPoints,
-            MocoBounds(-get_penetration_tolerance(), SimTK::Infinity)));
+    // One equation per point: height above ground >= -tolerance. Label each
+    // equation "<constraint name>_<suffix>".
+    std::vector<MocoBounds> bounds(m_points.size(),
+            MocoBounds(-get_penetration_tolerance(), SimTK::Infinity));
     std::vector<std::string> suffixes;
     for (const auto& point : m_points) suffixes.push_back(point->getName());
+
+    // Complementarity: for each ContactSideActuator on a side of a
+    // constrained point, load * (height - band) <= epsilon at each contact
+    // location. (Sliding is penalized by MocoContactPenaltyGoal instead.)
+    m_actuators.clear();
+    if (get_enforce_contact_complementarity()) {
+        OPENSIM_THROW_IF_FRMOBJ(!(get_complementarity_tolerance() > 0),
+                Exception,
+                "Expected complementarity_tolerance to be positive.");
+        for (const auto& actuator :
+                model.getComponentList<ContactSideActuator>()) {
+            const ContactSide& side = actuator.getContactSide();
+            const bool constrained = std::any_of(
+                    m_points.begin(), m_points.end(), [&](const auto& point) {
+                        return &point->getOwner() == &side;
+                    });
+            if (!constrained) continue;
+            m_actuators.emplace_back(&actuator);
+            for (const auto& location : actuator.getContactLocationInfo()) {
+                const std::string prefix =
+                        actuator.getName() + "_" + location.name;
+                bounds.emplace_back(
+                        -SimTK::Infinity, get_complementarity_tolerance());
+                suffixes.push_back(prefix + "_height");
+            }
+        }
+        OPENSIM_THROW_IF_FRMOBJ(m_actuators.empty(), Exception,
+                "enforce_contact_complementarity is true, but no "
+                "ContactSideActuator acts on the constrained ContactPoints' "
+                "sides.");
+        for (const auto& actuator : m_actuators) {
+            if (actuator->usesGate()) {
+                log_warn(
+                        "MocoContactPointConstraint '{}': ContactSideActuator "
+                        "'{}' uses 'gate' contact_enforcement; complementarity "
+                        "is usually used with 'constraint' enforcement.",
+                        getName(), actuator->getName());
+            } else if (dynamic_cast<const ContactSideWrenchActuator*>(
+                               actuator.get())) {
+                log_warn("MocoContactPointConstraint '{}': complementarity "
+                         "rarely converges for ContactSideWrenchActuator "
+                         "'{}'; use its 'gate' contact_enforcement (with a "
+                         "guess near the ground) or "
+                         "ContactSidePointActuator.",
+                        getName(), actuator->getName());
+            }
+        }
+    }
+
+    MocoConstraintInfo info = getConstraintInfo();
+    info.setName(getName());
+    info.setBounds(bounds);
     info.setSuffixes(suffixes);
-    setNumEquations(numPoints);
+    setNumEquations(static_cast<int>(bounds.size()));
     const_cast<MocoContactPointConstraint*>(this)->setConstraintInfo(info);
 }
 
 void MocoContactPointConstraint::calcPathConstraintErrorsImpl(
         const SimTK::State& state, SimTK::Vector& errors) const {
     // Moco realizes the state to Stage::Position before calling this.
-    for (int i = 0; i < static_cast<int>(m_points.size()); ++i) {
-        errors[i] = m_points[i]->calcHeightAboveGround(state);
+    int index = 0;
+    for (const auto& point : m_points) {
+        errors[index++] = point->calcHeightAboveGround(state);
+    }
+    if (m_actuators.empty()) return;
+
+    // Loads depend on the controls.
+    getModel().realizeVelocity(state);
+    for (const auto& actuator : m_actuators) {
+        for (const auto& location : actuator->calcContactLocations(state)) {
+            // Load is only allowed within the contact band.
+            errors[index++] =
+                    location.load * (location.height - location.contactHeight);
+        }
     }
 }
 
@@ -114,4 +179,13 @@ void MocoContactPointConstraint::printDescriptionImpl() const {
     log_info("        contact points: {}", names.empty() ? "(all)" : names);
     log_info(
             "        penetration tolerance: {} m", get_penetration_tolerance());
+    if (get_enforce_contact_complementarity()) {
+        std::string actuators;
+        for (const auto& actuator : m_actuators) {
+            if (!actuators.empty()) actuators += ", ";
+            actuators += actuator->getName();
+        }
+        log_info("        contact complementarity: actuators {}; tolerance {}",
+                actuators, get_complementarity_tolerance());
+    }
 }

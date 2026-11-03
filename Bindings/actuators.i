@@ -5,6 +5,9 @@
 %include <OpenSim/Actuators/PointActuator.h>
 %include <OpenSim/Actuators/TorqueActuator.h>
 %include <OpenSim/Actuators/BodyActuator.h>
+%include <OpenSim/Actuators/ContactSideActuator.h>
+%include <OpenSim/Actuators/ContactSidePointActuator.h>
+%include <OpenSim/Actuators/ContactSideWrenchActuator.h>
 %include <OpenSim/Actuators/PointToPointActuator.h>
 %include <OpenSim/Actuators/ClutchedPathSpring.h>
 %include <OpenSim/Actuators/SpringGeneralizedForce.h>

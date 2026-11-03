@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include <OpenSim/Actuators/ContactSideActuator.h>
 #include <OpenSim/Simulation/Model/ContactPoint.h>
 
 namespace OpenSim {
@@ -65,6 +66,45 @@ auto* right = problem.addPathConstraint<MocoContactPointConstraint>();
 right->setName("no_penetration_right");
 right->addContactSidePath("/zmp_estimator/right");
 @endcode
+
+### Contact complementarity
+With `enforce_contact_complementarity`, the constraint also restricts the
+load of each ContactSideActuator acting on a constrained point's
+ContactSide (see ContactSideActuator::calcContactLocations()). For each
+contact location with load \f$ \lambda \f$ (fraction of the actuator's
+maximum_normal_force), height \f$ h \f$ and contact band \f$ z_t \f$ (the
+ContactPoints' `distance_threshold`):
+\f[ \lambda (h - z_t) \le \epsilon \f]
+With \f$ h \ge 0 \f$ (above) and \f$ \lambda \ge 0 \f$, this is a relaxed
+complementarity condition: load only within \f$ z_t \f$ of the ground. The
+band stands in for the compliance of the foot and shoe: a rigid foot
+(\f$ z_t = 0 \f$) cannot stop an impact with a bounded force, because it
+would have to stop within the tolerance; with an 8 mm band, a foot landing at
+1 m/s needs a deceleration of about 60 m/s^2. It is solved in one solve with a
+fixed tolerance; its gradient with respect to height is \f$ \lambda \f$, so
+a load requested in the air pulls the foot toward the ground. Use with the
+actuators' 'constraint' contact_enforcement. Labels end in "_height".
+
+The relaxation allows a small load above the band,
+\f$ \lambda \le \epsilon / (h - z_t) \f$: with the default
+\f$ \epsilon = 3 \times 10^{-4} \f$, about 10% of maximum_normal_force 3 mm
+above the band, and 1.5% 2 cm above it. Smaller tolerances make the problem
+harder for interior-point solvers (complementarity constraints have no
+strictly feasible interior; \f$ 10^{-4} \f$ failed in testing). Add
+MocoContactPenaltyGoal to drive this load, and sliding of loaded points,
+toward zero.
+
+Practical notes from testing (a planar foot landing,
+testMocoContactSideActuators):
+- Scale the actuators' maximum_normal_force to the body (a few times body
+  weight per side). The band must be able to stop the foot: stopping from
+  speed \f$ v \f$ within \f$ z_t \f$ needs a deceleration of about
+  \f$ v^2 / (2 z_t) \f$. If the maximum force barely allows this, the
+  solution saturates the load at impact and tends to bounce.
+- Complementarity problems have local optima for each sequence of contact
+  and flight phases (e.g., bouncing). Costs that reward settling (tracking
+  costs, or small costs on speeds) and the actuators' optional
+  `load_time_constant` help avoid them.
 
 ### Recommendations
 - **Place the ContactPoints on the sole.** The constraint keeps the points,
@@ -115,6 +155,18 @@ public:
         return get_penetration_tolerance();
     }
 
+    /** Add the contact complementarity constraints for ContactSideActuators
+    (see class description). */
+    void setEnforceContactComplementarity(bool enforce) {
+        set_enforce_contact_complementarity(enforce);
+    }
+    bool getEnforceContactComplementarity() const {
+        return get_enforce_contact_complementarity();
+    }
+    void setComplementarityTolerance(double tolerance) {
+        set_complementarity_tolerance(tolerance);
+    }
+
 protected:
     void initializeOnModelImpl(
             const Model& model, const MocoProblemInfo&) const override;
@@ -132,11 +184,22 @@ private:
     OpenSim_DECLARE_PROPERTY(penetration_tolerance, double,
             "Allowed penetration (m) of a point below the ground plane "
             "(non-negative). Default 0.");
+    OpenSim_DECLARE_PROPERTY(enforce_contact_complementarity, bool,
+            "Add load * (height - distance_threshold) <= "
+            "complementarity_tolerance for each contact location of the "
+            "ContactSideActuators acting on the constrained points' sides. "
+            "Default false.");
+    OpenSim_DECLARE_PROPERTY(complementarity_tolerance, double,
+            "Relaxation of load * (height - distance_threshold) <= tolerance "
+            "(load as a fraction of maximum_normal_force, height in m). "
+            "Default 3e-4.");
 
     void constructProperties();
 
     // Resolved in initializeOnModelImpl().
     mutable std::vector<SimTK::ReferencePtr<const ContactPoint>> m_points;
+    mutable std::vector<SimTK::ReferencePtr<const ContactSideActuator>>
+            m_actuators;
 };
 
 } // namespace OpenSim

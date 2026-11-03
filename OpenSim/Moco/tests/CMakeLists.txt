@@ -38,6 +38,12 @@ OpenSimAddTest(NAME testMocoContactPointConstraint
         LINKLIBS osimMoco
         ENVIRONMENT "OPENSIM_MOCO_PARALLEL=0")
 
+# Most cases evaluate the actuators directly; the cases tagged [casadi]
+# need MocoCasADiSolver.
+OpenSimAddTest(NAME testMocoContactSideActuators
+        LINKLIBS osimMoco
+        ENVIRONMENT "OPENSIM_MOCO_PARALLEL=0")
+
 OpenSimAddTest(NAME testMocoContact
         LINKLIBS osimMoco
         DISABLED ${MOCO_CASADI_TESTS_DISABLED}

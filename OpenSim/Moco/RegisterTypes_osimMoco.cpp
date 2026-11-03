@@ -31,6 +31,7 @@
 #include "MocoGoal/MocoAngularVelocityTrackingGoal.h"
 #include "MocoGoal/MocoContactImpulseTrackingGoal.h"
 #include "MocoGoal/MocoContactTrackingGoal.h"
+#include "MocoGoal/MocoContactPenaltyGoal.h"
 #include "MocoGoal/MocoControlGoal.h"
 #include "MocoGoal/MocoControlTrackingGoal.h"
 #include "MocoGoal/MocoExpressionBasedParameterGoal.h"
@@ -78,6 +79,7 @@ OSIMMOCO_API void RegisterTypes_osimMoco() {
         Object::registerType(MocoMarkerFinalGoal());
         Object::registerType(MocoContactTrackingGoal());
         Object::registerType(MocoContactTrackingGoalGroup());
+        Object::registerType(MocoContactPenaltyGoal());
         Object::registerType(MocoContactImpulseTrackingGoal());
         Object::registerType(MocoContactImpulseTrackingGoalGroup());
         Object::registerType(MocoControlGoal());
