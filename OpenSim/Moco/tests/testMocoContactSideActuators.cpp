@@ -329,6 +329,18 @@ TEST_CASE("ContactSideActuator load dynamics") {
     CHECK_THAT(actuator.getStateVariableDerivativeValue(state, "normal_load"),
             WithinRel((0.8 - 0.5) / 0.02, 1e-12));
 
+    // Moco's default bounds for the state come from the
+    // statebounds_normal_load output.
+    {
+        MocoProblem problem;
+        problem.setModelAsCopy(model);
+        const auto rep = problem.createRep();
+        const auto bounds =
+                rep.getStateInfo("/forceset/contact/normal_load").getBounds();
+        CHECK(bounds.getLower() == 0);
+        CHECK(bounds.getUpper() == 1);
+    }
+
     // Without dynamics, setting the state is an error.
     Model plain =
             createFootModel<ContactSidePointActuator>("distance", "constraint");

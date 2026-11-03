@@ -104,8 +104,9 @@ solutions. It also lowers and delays the impact peak (in the landing test,
 462 N without dynamics and 289 N with a 20 ms time constant). Lift-off
 requires the load to decay first, so the time constant also delays
 lift-off. The load stays in [0, 1] if its initial value is. In Moco, the
-state is `<actuator path>/normal_load`; set its bounds to [0, 1] and its
-initial value (e.g., 0 when the foot starts in the air). Values of 10-30 ms
+state is `<actuator path>/normal_load`, with default bounds [0, 1] (from the
+`statebounds_normal_load` output); set its initial value if it is known (e.g.,
+0 when the foot starts in the air). Values of 10-30 ms
 are typical of the rise time of the vertical ground reaction at heel strike.
 
 ### Friction and free moment
@@ -186,6 +187,10 @@ public:
             calcCenterOfPressure, SimTK::Stage::Velocity);
     OpenSim_DECLARE_OUTPUT(
             free_moment, SimTK::Vec3, calcFreeMoment, SimTK::Stage::Velocity);
+    /** Bounds [0, 1] of the 'normal_load' state variable (load dynamics
+    only), used by Moco as the state's default bounds. */
+    OpenSim_DECLARE_OUTPUT(statebounds_normal_load, SimTK::Vec2,
+            getBoundsNormalLoad, SimTK::Stage::Model);
 
     //==========================================================================
     // METHODS
@@ -217,6 +222,10 @@ public:
     double getNormalLoad(const SimTK::State& state) const;
     /** Set the 'normal_load' state variable (load dynamics only). */
     void setNormalLoad(SimTK::State& state, double load) const;
+    /** Bounds of the 'normal_load' state variable: [0, 1]. */
+    SimTK::Vec2 getBoundsNormalLoad(const SimTK::State&) const {
+        return {0, 1};
+    }
 
     /** A location where load is applied, for contact complementarity
     constraints. */
