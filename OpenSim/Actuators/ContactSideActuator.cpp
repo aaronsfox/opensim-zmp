@@ -52,6 +52,7 @@ void ContactSideActuator::constructProperties() {
     constructProperty_velocity_smoothing(0.005);
     constructProperty_contact_enforcement("constraint");
     constructProperty_load_time_constant(-1);
+    constructProperty_load_release_time_constant(-1);
 }
 
 const ContactSide& ContactSideActuator::getContactSide() const {
@@ -110,9 +111,16 @@ void ContactSideActuator::computeStateVariableDerivatives(
     if (!hasLoadDynamics()) return;
     // The target is the normal control (index 0 for every concrete class).
     const SimTK::Vector controls = getControls(state);
-    setStateVariableDerivativeValue(state, "normal_load",
-            (controls[0] - getStateVariableValue(state, "normal_load")) /
-                    get_load_time_constant());
+    const double load = getStateVariableValue(state, "normal_load");
+    const double difference = controls[0] - load;
+    const double rise = get_load_time_constant();
+    double rate = 1.0 / rise;
+    if (get_load_release_time_constant() > 0) {
+        // Smooth switch between rising and falling time constants.
+        const double f = 0.5 + 0.5 * std::tanh(10.0 * difference);
+        rate = f / rise + (1 - f) / get_load_release_time_constant();
+    }
+    setStateVariableDerivativeValue(state, "normal_load", difference * rate);
 }
 
 double ContactSideActuator::getNormalLoad(const SimTK::State& state) const {

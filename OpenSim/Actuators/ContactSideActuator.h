@@ -109,6 +109,18 @@ state is `<actuator path>/normal_load`, with default bounds [0, 1] (from the
 0 when the foot starts in the air). Values of 10-30 ms
 are typical of the rise time of the vertical ground reaction at heel strike.
 
+With a positive `load_release_time_constant` \f$ \tau_r \f$, the load rises
+with \f$ \tau \f$ and falls with \f$ \tau_r \f$, blended smoothly (as in
+De Groote et al.'s (2016) activation dynamics):
+\f[ \dot{\lambda} = (u_n - \lambda) \left[ \frac{f}{\tau}
+        + \frac{1 - f}{\tau_r} \right], \quad
+    f = \tfrac{1}{2} + \tfrac{1}{2} \tanh(10 (u_n - \lambda)) \f]
+A short \f$ \tau_r \f$ (e.g., 2-5 ms) keeps the smoothing of loading at
+impact but lets the load drop quickly at lift-off. With a long release time
+constant, the decay of the load, rather than the controls, shapes the end of
+stance, and the complementarity constraint then holds the loaded points within
+the contact band until the load has decayed.
+
 ### Friction and free moment
 The tangential force is bounded by a friction pyramid,
 \f$ |F_x|, |F_z| \le \mu F_y \f$ (`friction_coefficient`), and the free
@@ -171,6 +183,12 @@ public:
             "the normal control sets a target that the load follows (state "
             "variable 'normal_load'). Smooths the ground reaction in time. "
             "Non-positive: no dynamics, the control is the load. Default -1.");
+    OpenSim_DECLARE_PROPERTY(load_release_time_constant, double,
+            "Time constant (s) of the load dynamics while the load decreases "
+            "(control below the load), if positive; otherwise "
+            "load_time_constant is used for both. A short release time "
+            "constant smooths loading at impact without delaying lift-off. "
+            "Default -1.");
 
     //==========================================================================
     // SOCKETS

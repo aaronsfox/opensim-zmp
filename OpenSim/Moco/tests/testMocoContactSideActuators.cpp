@@ -329,6 +329,21 @@ TEST_CASE("ContactSideActuator load dynamics") {
     CHECK_THAT(actuator.getStateVariableDerivativeValue(state, "normal_load"),
             WithinRel((0.8 - 0.5) / 0.02, 1e-12));
 
+    // Separate release time constant: falling (control 0.2 below the load
+    // 0.5) uses mostly the release time constant.
+    actuator.set_load_release_time_constant(0.004);
+    {
+        SimTK::State& s2 = model.initSystem();
+        actuator.setNormalLoad(s2, 0.5);
+        setFoot(model, s2, halfHeight, {0.3, 0, 0, 0, 0, 0, 0, 0});
+        model.realizeAcceleration(s2);
+        const double f = 0.5 + 0.5 * std::tanh(10 * (0.3 - 0.5));
+        CHECK_THAT(actuator.getStateVariableDerivativeValue(s2, "normal_load"),
+                WithinRel((0.3 - 0.5) * (f / 0.02 + (1 - f) / 0.004), 1e-12));
+    }
+    actuator.set_load_release_time_constant(-1);
+    model.initSystem();
+
     // Moco's default bounds for the state come from the
     // statebounds_normal_load output.
     {
