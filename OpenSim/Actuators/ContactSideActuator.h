@@ -144,6 +144,27 @@ change at least as fast as the normal force. The states stay in [-1, 1] if
 their initial values do; their default bounds in Moco are [-1, 1] (from the
 `statebounds_*` outputs).
 
+### Choosing the time constants
+The load and shear dynamics partly model tissue and shoe compliance, but
+they also regularize the optimal control problem, and their best values
+depend on the movement and its context. Choose them for the task, report
+them, and check how sensitive the results of interest are to them. In our
+benchmarks (tracking, no pelvis residuals):
+- Running (rapid loading, push-off): a 15 ms rise and 3 ms release with
+  10 ms shear dynamics removed impulsive spikes and shear ripple and kept
+  the push-off.
+- Walking: the same settings matched heel-strike timing, but the fast
+  release let the load drop quickly after the impact peak, making the peak
+  taller and narrower than the reference; a longer release may suit walking
+  better. Without a release time constant, a 15 ms rise made heel strike
+  about 10 ms early.
+- Landing: the load time constant directly lowers and delays the impact
+  peak (above), so do not rely on these dynamics when the impact peak itself
+  is the outcome of interest, unless the time constant is chosen from
+  measured tissue or shoe properties.
+Stiffer movements (e.g., springy running, landing) and softer ones (e.g.,
+walking) therefore need different values.
+
 ### Controls
 Concrete classes define the controls (see ContactSideWrenchActuator and
 ContactSidePointActuator); getControlBounds() and getControlLabels() describe
