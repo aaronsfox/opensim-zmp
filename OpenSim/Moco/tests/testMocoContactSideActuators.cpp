@@ -50,6 +50,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <catch2/catch_all.hpp>
 #include <cmath>
 #include <memory>
@@ -363,6 +364,74 @@ TEST_CASE("ContactSideActuator load dynamics") {
     CHECK_THROWS(
             plain.getComponent<ContactSidePointActuator>("/forceset/contact")
                     .setNormalLoad(plainState, 0.5));
+}
+
+TEST_CASE("ContactSideActuator shear dynamics") {
+    Model model =
+            createFootModel<ContactSidePointActuator>("distance", "constraint");
+    auto& actuator =
+            model.updComponent<ContactSidePointActuator>("/forceset/contact");
+    CHECK_FALSE(actuator.hasShearDynamics());
+    const std::array<int, 3> expected{5, 6, 7};
+    CHECK(actuator.getShearControlIndices() == expected);
+    actuator.set_shear_time_constant(0.008);
+    model.finalizeConnections();
+    SimTK::State& state = model.initSystem();
+    REQUIRE(actuator.hasShearDynamics());
+    const auto names = actuator.getStateVariableNames();
+    CHECK(names.findIndex("/forceset/contact/free_moment_ratio") >= 0);
+    // Initially no shear, whatever the controls.
+    setFoot(model, state, halfHeight, {0.8, 1, 1, 1, 1, 0.9, -0.6, 0.4});
+    checkVec3(actuator.getShearRatios(state), Vec3(0), 0);
+    CHECK(actuator.calcGroundReactionForce(state)[0] == 0);
+
+    // The tangential force and free moment use the states; their derivatives
+    // drive them toward the controls.
+    actuator.setShearRatios(state, Vec3(0.5, -0.2, 0.1));
+    setFoot(model, state, halfHeight, {0.8, 1, 1, 1, 1, 0.9, -0.6, 0.4});
+    const double mu = actuator.get_friction_coefficient();
+    const Vec3 force = actuator.calcGroundReactionForce(state);
+    CHECK_THAT(force[0], WithinRel(mu * 0.5 * force[1], 1e-12));
+    CHECK_THAT(force[2], WithinRel(mu * -0.2 * force[1], 1e-12));
+    CHECK_THAT(actuator.calcFreeMoment(state)[1],
+            WithinRel(actuator.get_free_moment_radius() * 0.1 * force[1],
+                    1e-12));
+    model.realizeAcceleration(state);
+    CHECK_THAT(actuator.getStateVariableDerivativeValue(state, "friction_x"),
+            WithinRel((0.9 - 0.5) / 0.008, 1e-12));
+    CHECK_THAT(actuator.getStateVariableDerivativeValue(state, "friction_z"),
+            WithinRel((-0.6 + 0.2) / 0.008, 1e-12));
+    CHECK_THAT(actuator.getStateVariableDerivativeValue(
+                       state, "free_moment_ratio"),
+            WithinRel((0.4 - 0.1) / 0.008, 1e-12));
+
+    // Moco's default bounds come from the statebounds_* outputs.
+    {
+        MocoProblem problem;
+        problem.setModelAsCopy(model);
+        const auto rep = problem.createRep();
+        for (const std::string name :
+                {"friction_x", "friction_z", "free_moment_ratio"}) {
+            const auto bounds =
+                    rep.getStateInfo("/forceset/contact/" + name).getBounds();
+            CHECK(bounds.getLower() == -1);
+            CHECK(bounds.getUpper() == 1);
+        }
+    }
+
+    // The wrench actuator's shear controls.
+    Model wrench = createFootModel<ContactSideWrenchActuator>();
+    const std::array<int, 3> wrenchExpected{1, 2, 5};
+    CHECK(wrench.getComponent<ContactSideWrenchActuator>("/forceset/contact")
+                    .getShearControlIndices() == wrenchExpected);
+
+    // Without dynamics, setting the states is an error.
+    Model plain =
+            createFootModel<ContactSidePointActuator>("distance", "constraint");
+    SimTK::State& plainState = plain.initSystem();
+    CHECK_THROWS(
+            plain.getComponent<ContactSidePointActuator>("/forceset/contact")
+                    .setShearRatios(plainState, Vec3(0)));
 }
 
 TEST_CASE("Contact complementarity") {

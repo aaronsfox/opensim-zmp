@@ -79,6 +79,7 @@ public:
     int numControls() const override;
     std::vector<std::pair<double, double>> getControlBounds() const override;
     std::vector<std::string> getControlLabels() const override;
+    std::array<int, 3> getShearControlIndices() const override;
 
     /** Normal load \f$ \lambda_i \f$ of each ContactPoint (fraction of
     maximum_normal_force). The system must be realized to

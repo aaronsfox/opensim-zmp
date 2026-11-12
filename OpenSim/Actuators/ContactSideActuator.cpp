@@ -53,6 +53,7 @@ void ContactSideActuator::constructProperties() {
     constructProperty_contact_enforcement("constraint");
     constructProperty_load_time_constant(-1);
     constructProperty_load_release_time_constant(-1);
+    constructProperty_shear_time_constant(-1);
 }
 
 const ContactSide& ContactSideActuator::getContactSide() const {
@@ -98,19 +99,36 @@ void ContactSideActuator::extendAddToSystem(
     if (hasLoadDynamics()) {
         addStateVariable("normal_load", SimTK::Stage::Dynamics);
     }
+    if (hasShearDynamics()) {
+        for (const auto& name : getShearStateNames()) {
+            addStateVariable(name, SimTK::Stage::Dynamics);
+        }
+    }
 }
 
 void ContactSideActuator::extendInitStateFromProperties(
         SimTK::State& state) const {
     Super::extendInitStateFromProperties(state);
     if (hasLoadDynamics()) setStateVariableValue(state, "normal_load", 0);
+    if (hasShearDynamics()) setShearRatios(state, SimTK::Vec3(0));
 }
 
 void ContactSideActuator::computeStateVariableDerivatives(
         const SimTK::State& state) const {
+    if (!hasLoadDynamics() && !hasShearDynamics()) return;
+    const SimTK::Vector controls = getControls(state);
+    if (hasShearDynamics()) {
+        const auto& names = getShearStateNames();
+        const auto indices = getShearControlIndices();
+        for (int i = 0; i < 3; ++i) {
+            const double ratio = getStateVariableValue(state, names[i]);
+            setStateVariableDerivativeValue(state, names[i],
+                    (controls[indices[i]] - ratio) /
+                            get_shear_time_constant());
+        }
+    }
     if (!hasLoadDynamics()) return;
     // The target is the normal control (index 0 for every concrete class).
-    const SimTK::Vector controls = getControls(state);
     const double load = getStateVariableValue(state, "normal_load");
     const double difference = controls[0] - load;
     const double rise = get_load_time_constant();
@@ -137,6 +155,34 @@ void ContactSideActuator::setNormalLoad(
             "The normal load is a state variable only with a positive "
             "load_time_constant.");
     setStateVariableValue(state, "normal_load", load);
+}
+
+const std::array<std::string, 3>& ContactSideActuator::getShearStateNames() {
+    static const std::array<std::string, 3> names{
+            "friction_x", "friction_z", "free_moment_ratio"};
+    return names;
+}
+
+SimTK::Vec3 ContactSideActuator::getShearRatios(
+        const SimTK::State& state) const {
+    const auto& names = getShearStateNames();
+    if (hasShearDynamics()) {
+        return {getStateVariableValue(state, names[0]),
+                getStateVariableValue(state, names[1]),
+                getStateVariableValue(state, names[2])};
+    }
+    const SimTK::Vector controls = getControls(state);
+    const auto indices = getShearControlIndices();
+    return {controls[indices[0]], controls[indices[1]], controls[indices[2]]};
+}
+
+void ContactSideActuator::setShearRatios(
+        SimTK::State& state, const SimTK::Vec3& ratios) const {
+    OPENSIM_THROW_IF_FRMOBJ(!hasShearDynamics(), Exception,
+            "The shear ratios are state variables only with a positive "
+            "shear_time_constant.");
+    const auto& names = getShearStateNames();
+    for (int i = 0; i < 3; ++i) setStateVariableValue(state, names[i], ratios[i]);
 }
 
 //=============================================================================

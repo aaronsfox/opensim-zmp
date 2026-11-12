@@ -24,6 +24,7 @@
  * -------------------------------------------------------------------------- */
 
 #include "osimActuatorsDLL.h"
+#include <array>
 #include <string>
 #include <utility>
 #include <vector>
@@ -126,6 +127,23 @@ The tangential force is bounded by a friction pyramid,
 \f$ |F_x|, |F_z| \le \mu F_y \f$ (`friction_coefficient`), and the free
 moment by \f$ |\tau_y| \le r F_y \f$ (`free_moment_radius`).
 
+### Shear dynamics (optional)
+With a positive `shear_time_constant` \f$ \tau_s \f$, the friction ratios
+and the free moment ratio (the friction_x, friction_z and free_moment
+controls, in [-1, 1]) are state variables, 'friction_x', 'friction_z' and
+'free_moment_ratio', each following its control \f$ u \f$ with first-order
+dynamics, \f$ \dot{s} = (u - s) / \tau_s \f$. The tangential force is then
+\f$ \mu s F_y \f$, so the share of the load carried in shear cannot change
+faster than \f$ \tau_s \f$ allows; this stands in for the time needed for
+tangential deformation of the heel pad and shoe, and keeps optimal control
+solutions from switching the shear direction between mesh points. The
+tangential force already inherits the smoothness of the normal load; the
+shear dynamics smooth the ratio. Use a shorter time constant than
+`load_time_constant` (e.g., 5-10 ms): relative to their size, shear forces
+change at least as fast as the normal force. The states stay in [-1, 1] if
+their initial values do; their default bounds in Moco are [-1, 1] (from the
+`statebounds_*` outputs).
+
 ### Controls
 Concrete classes define the controls (see ContactSideWrenchActuator and
 ContactSidePointActuator); getControlBounds() and getControlLabels() describe
@@ -189,6 +207,12 @@ public:
             "load_time_constant is used for both. A short release time "
             "constant smooths loading at impact without delaying lift-off. "
             "Default -1.");
+    OpenSim_DECLARE_PROPERTY(shear_time_constant, double,
+            "Time constant (s) of first-order dynamics of the friction and "
+            "free moment ratios: their controls set targets that the ratios "
+            "follow (state variables 'friction_x', 'friction_z' and "
+            "'free_moment_ratio'). Smooths the tangential ground reaction and "
+            "free moment in time. Non-positive: no dynamics. Default -1.");
 
     //==========================================================================
     // SOCKETS
@@ -209,6 +233,14 @@ public:
     only), used by Moco as the state's default bounds. */
     OpenSim_DECLARE_OUTPUT(statebounds_normal_load, SimTK::Vec2,
             getBoundsNormalLoad, SimTK::Stage::Model);
+    /** Bounds [-1, 1] of the shear state variables (shear dynamics only),
+    used by Moco as the states' default bounds. */
+    OpenSim_DECLARE_OUTPUT(statebounds_friction_x, SimTK::Vec2,
+            getBoundsShearRatio, SimTK::Stage::Model);
+    OpenSim_DECLARE_OUTPUT(statebounds_friction_z, SimTK::Vec2,
+            getBoundsShearRatio, SimTK::Stage::Model);
+    OpenSim_DECLARE_OUTPUT(statebounds_free_moment_ratio, SimTK::Vec2,
+            getBoundsShearRatio, SimTK::Stage::Model);
 
     //==========================================================================
     // METHODS
@@ -243,6 +275,24 @@ public:
     /** Bounds of the 'normal_load' state variable: [0, 1]. */
     SimTK::Vec2 getBoundsNormalLoad(const SimTK::State&) const {
         return {0, 1};
+    }
+
+    /** Whether the friction and free moment ratios have first-order
+    dynamics (positive `shear_time_constant`). */
+    bool hasShearDynamics() const { return get_shear_time_constant() > 0; }
+    /** Indices of the friction_x, friction_z and free_moment controls. */
+    virtual std::array<int, 3> getShearControlIndices() const = 0;
+    /** Names of the shear state variables, in the order of
+    getShearControlIndices(). */
+    static const std::array<std::string, 3>& getShearStateNames();
+    /** Friction ratios (x, z) and free moment ratio, each in [-1, 1]: the
+    shear state variables with shear dynamics, otherwise the controls. */
+    SimTK::Vec3 getShearRatios(const SimTK::State& state) const;
+    /** Set the shear state variables (shear dynamics only). */
+    void setShearRatios(SimTK::State& state, const SimTK::Vec3& ratios) const;
+    /** Bounds of the shear state variables: [-1, 1]. */
+    SimTK::Vec2 getBoundsShearRatio(const SimTK::State&) const {
+        return {-1, 1};
     }
 
     /** A location where load is applied, for contact complementarity

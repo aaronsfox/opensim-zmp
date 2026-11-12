@@ -136,6 +136,10 @@ ContactSideWrenchActuator::getContactLocationInfo() const {
             m_velocityThreshold}};
 }
 
+std::array<int, 3> ContactSideWrenchActuator::getShearControlIndices() const {
+    return {1, 2, 5};
+}
+
 void ContactSideWrenchActuator::calcLoads(const SimTK::State& state,
         std::vector<PointLoad>& loads, Vec3& freeMoment) const {
     const SimTK::Vector controls = getControls(state);
@@ -143,6 +147,7 @@ void ContactSideWrenchActuator::calcLoads(const SimTK::State& state,
     const double mu = get_friction_coefficient();
 
     const Vec3 copInBody = calcCenterOfPressureInBody(controls[3], controls[4]);
+    const Vec3 shear = getShearRatios(state);
     const double normalForce =
             get_maximum_normal_force() *
             calcGate(state, body, copInBody, m_method, m_distanceThreshold,
@@ -156,7 +161,7 @@ void ContactSideWrenchActuator::calcLoads(const SimTK::State& state,
 
     loads.clear();
     loads.push_back({&body, pointInFrame, pointInGround,
-            normalForce * Vec3(mu * controls[1], 1.0, mu * controls[2])});
+            normalForce * Vec3(mu * shear[0], 1.0, mu * shear[1])});
     freeMoment =
-            Vec3(0, get_free_moment_radius() * normalForce * controls[5], 0);
+            Vec3(0, get_free_moment_radius() * normalForce * shear[2], 0);
 }

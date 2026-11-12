@@ -61,6 +61,11 @@ std::vector<std::string> ContactSidePointActuator::getControlLabels() const {
     return labels;
 }
 
+std::array<int, 3> ContactSidePointActuator::getShearControlIndices() const {
+    const int n = getContactSide().getNumContactPoints();
+    return {n + 1, n + 2, n + 3};
+}
+
 std::vector<double> ContactSidePointActuator::calcPointLoads(
         const SimTK::State& state) const {
     const SimTK::Vector controls = getControls(state);
@@ -115,10 +120,10 @@ void ContactSidePointActuator::calcLoads(const SimTK::State& state,
         std::vector<PointLoad>& loads, Vec3& freeMoment) const {
     const ContactSide& side = getContactSide();
     const int n = side.getNumContactPoints();
-    const SimTK::Vector controls = getControls(state);
     const double maxForce = get_maximum_normal_force();
     const double mu = get_friction_coefficient();
-    const Vec3 direction(mu * controls[n + 1], 1.0, mu * controls[n + 2]);
+    const Vec3 shear = getShearRatios(state);
+    const Vec3 direction(mu * shear[0], 1.0, mu * shear[1]);
     const std::vector<double> pointLoads = calcPointLoads(state);
 
     loads.clear();
@@ -137,5 +142,5 @@ void ContactSidePointActuator::calcLoads(const SimTK::State& state,
         normalForce += maxForce * load;
     }
     freeMoment = Vec3(
-            0, get_free_moment_radius() * normalForce * controls[n + 3], 0);
+            0, get_free_moment_radius() * normalForce * shear[2], 0);
 }

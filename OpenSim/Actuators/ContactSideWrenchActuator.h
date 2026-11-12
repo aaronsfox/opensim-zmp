@@ -97,6 +97,7 @@ public:
     int numControls() const override { return 6; }
     std::vector<std::pair<double, double>> getControlBounds() const override;
     std::vector<std::string> getControlLabels() const override;
+    std::array<int, 3> getShearControlIndices() const override;
 
     /** The center of pressure material point in the contact body frame, for
     the given fore-aft and medio-lateral controls (each 0 to 1). */
